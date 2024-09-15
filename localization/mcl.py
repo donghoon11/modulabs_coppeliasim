@@ -132,7 +132,7 @@ def main():
     myrobot.move(-math.pi / 2.0, 15.0)
     myrobot.move(-math.pi / 2.0, 10.0)
 
-    n = 1000
+    n = 1000    # 초기 파티클 입자 1000개 생성.
     particles = [Robot() for _ in range(n)]
     for i in range(n):
         particles[i].set_noise(0.05, 0.05, 5.0)
