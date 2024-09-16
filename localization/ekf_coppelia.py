@@ -147,39 +147,51 @@ class ExtendedKalmanFilterLocalization:
 
         return H, h_scan
 
-    def visualize(self, loc, scan):
-        x, y, theta = loc
-        # clear object
-        for object in self.plt_objects:
-            if object:
-                object.remove()
 
-        # grid
+    def visualize(self, loc, scan):
+        """
+        로봇의 실제 위치(loc)와 추정된 위치를 시각화하고,
+        라이다 스캔 데이터도 함께 표시합니다.
+        """
+        x, y, theta = loc
+        est_x, est_y, est_theta = self.state
+
+        # clear previous plots
+        for obj in self.plt_objects:
+            if obj:
+                obj.remove()
+
+        # 맵 시각화 (그리드)
         grid = -self.grid + 5
         self.plt_objects[0] = plt.pcolor(self.R, self.P, grid, cmap="gray")
 
-        # robot
-        (self.plt_objects[1],) = plt.plot(
-            x, y, color="green", marker="o", markersize=10
-        )
+        # 실제 로봇의 위치 시각화
+        self.plt_objects[1], = plt.plot(x, y, color="green", marker="o", markersize=10, label="True Position")
+        self.plt_objects[2] = plt.arrow(x, y, 0.5 * np.cos(theta), 0.5 * np.sin(theta), color="green", head_width=0.1)
 
-        # scan
-        rx = x + 0.275 * np.cos(theta)
-        ry = y + 0.275 * np.sin(theta)
+        # 추정된 로봇의 위치 시각화
+        self.plt_objects[3], = plt.plot(est_x, est_y, color="red", marker="x", markersize=10, label="Estimated Position")
+        self.plt_objects[4] = plt.arrow(est_x, est_y, 0.5 * np.cos(est_theta), 0.5 * np.sin(est_theta), color="red", head_width=0.1)
+
+        # 라이다 스캔 시각화
+        rx = est_x + 0.275 * np.cos(est_theta)
+        ry = est_y + 0.275 * np.sin(est_theta)
         for i, data in enumerate(scan):
             res, dist, _, _, _ = data  # res, dist, point, obj, n
             res = res > 0
             style = "--r" if res == 1 else "--b"
             dist = dist if res == 1 else 2.20
 
-            ti = theta + self.scan_theta[i]
+            ti = est_theta + self.scan_theta[i]
             xi = rx + dist * np.cos(ti)
             yi = ry + dist * np.sin(ti)
-            (self.plt_objects[2 + i],) = plt.plot([rx, xi], [ry, yi], style)
+            self.plt_objects[5 + i], = plt.plot([rx, xi], [ry, yi], style)
 
+        # 그래프 설정
         plt.xlim(-5, 5)
         plt.ylim(-5, 5)
         plt.gca().set_aspect("equal")
+        plt.legend()
         plt.pause(0.001)
 
 

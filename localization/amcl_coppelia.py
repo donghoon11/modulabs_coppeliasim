@@ -52,7 +52,7 @@ class AdvancedAdaptiveMonteCarloLocalization:
         self.particle_expansion_rate = 50
 
         # Grid map
-        with open("/home/oh/my_coppeliasim/coppelia-practice/youBot/mapping.npy", "rb") as f:
+        with open("/home/oh/my_coppeliasim/modulabs_coppeliasim/mapping/mapping.npy", "rb") as f:
             self.grid = np.load(f)
 
         # Plotting grid

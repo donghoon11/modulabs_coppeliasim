@@ -49,6 +49,7 @@ class MappingBot(YouBot):
 class Grid():
     def __init__(self):
         # grid 전체 배열 크기 100*100 으로 설정.
+        # test 환경 : 5m * 5m
         self.grid = np.zeros((100, 100))
         # plot grid
         r = np.linspace(-5, 5, 101)  # -5부터 5까지 101개의 x 좌표 생성
@@ -59,8 +60,8 @@ class Grid():
         # scan theta
         self.delta = np.pi / 12     # 13개 라이다 -> 12개 간격으로 분해능.
         # -90도 기준으로 각 라이다별 스캔 각도 계산.
-        self.scan_theta = np.array([-np.pi / 2 + self.delta * i for i in range(13)])
-        self.boundary = np.pi / 2 + self.delta / 2      # 마지막 라이다의 스캔 각도 절반 이상인 곳을 경계로 지정.
+        self.scan_theta = np.array([- np.pi / 2 + self.delta * i for i in range(13)])
+        self.boundary = np.pi / 2 + self.delta / 2      
         # min distance
         self.min_dist = (2 * (0.05**2)) ** 0.5
 
@@ -138,7 +139,7 @@ class Grid():
         np.clip(self.grid, -5, 5, out=self.grid)        # 마지막으로 그리드의 모든 셀 값이 -5에서 5 사이로 제한.
 
     def save(self):
-        with open("/home/oh/my_coppeliasim/modulabs_coppeliasim/mapping/mapping.npy", "wb") as f:
+        with open("/home/oh/my_coppeliasim/modulabs_coppeliasim/localization/mapping_test.npy", "wb") as f:
             np.save(f, self.grid)
 
     def visualize(self, loc, scan):
