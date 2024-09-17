@@ -1,12 +1,18 @@
-# zmq remote api 로 변환하기.
+from dataclasses import dataclass
+from abc import abstractmethod
+import numpy as np
+
+
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 
 class LumiBot:
     def __init__(self):
         self.client = RemoteAPIClient()
         self.sim = self.client.require('sim')
+        self.run_flag = True
 
-    def sysCall_init(self):
+    def init_coppelia(self):
+        self.lumiBot_ref = self.sim.getObject("/lumiBot_ref")
         self.lmotor = self.sim.getObjectHandle("./lumibot_leftMotor")
         self.rmotor = self.sim.getObjectHandle("./lumibot_rightMotor")
         
@@ -32,19 +38,19 @@ class LumiBot:
         self.avg = self.avg_default
         self.diff = 0
         self.fwd = self.fwd_default
-    
-    # def get_object_handle(self, name):
-    #     # Placeholder for the actual API call
-    #     return sim.getObjectHandle(name)
 
-    # def set_joint_target_velocity(self, handle, velocity):
-    #     # Placeholder for the actual API call
-    #     return self.sim.setJointTargetVelocity(handle, velocity)
-    
-    # def read_proximity_sensor(self, sensor):
-    #     # Placeholder for the actual API call
-    #     return self.sim.readProximitySensor(sensor)
-    
+        # lidars
+        self.lidars = []
+        for i in range(1,6):
+            self.lidars.append(self.sim.getObject(f"/lidar_{i:02d}"))
+            # print(f"/lidar_{i:02d}")
+
+    def read_lidars(self):
+        scan = []
+        for id in self.lidars:
+            scan.append(self.sim.readProximitySensor(id))
+        return scan
+
     def sysCall_actuation(self):
         self.sim.setJointTargetVelocity(self.lmotor, self.v_straight)
         self.sim.setJointTargetVelocity(self.rmotor, self.v_straight)
@@ -72,9 +78,12 @@ class LumiBot:
                     self.sim.setJointTargetVelocity(self.rmotor, self.v - self.dv)
     
     def sysCall_sensing(self):
-        flag1, LF = self.sim.readProximitySensor(self.sensorLF)
-        flag2, LR = self.sim.readProximitySensor(self.sensorLR)
-        flag3, F = self.sim.readProximitySensor(self.sensorF)
+        # flag1, LF = self.sim.readProximitySensor(self.sensorLF)
+        # flag2, LR = self.sim.readProximitySensor(self.sensorLR)
+        # flag3, F = self.sim.readProximitySensor(self.sensorF)
+        flag1, LF, _, _, _ = self.sim.readProximitySensor(self.sensorLF)
+        flag2, LR, _, _, _ = self.sim.readProximitySensor(self.sensorLR)
+        flag3, F, _, _, _ = self.sim.readProximitySensor(self.sensorF)
         
         if flag1 == 0 and flag2 == 1:
             self.avg = LR
@@ -94,18 +103,29 @@ class LumiBot:
         else:
             self.fwd = self.fwd_default
         
-        print(f'avg= {self.avg} diff= {self.diff} fwd= {self.fwd}')
+        # print(f'avg= {self.avg} diff= {self.diff} fwd= {self.fwd}')
     
     def cleanup(self):
         pass
 
     def run_coppelia(self):
+        # start simulation
+        self.sim.setStepping(True)
         self.sim.startSimulation()
-        while True:
+        count = 0
+        while self.run_flag:
+            count += 1
+            # step
+            self.run_step(count)
+            self.sim.step()
             self.sysCall_actuation()
             self.sysCall_sensing()
+    
+    @abstractmethod
+    def run_step(self, count):
+        pass
 
 if __name__ == "__main__" :
     client = LumiBot()
-    client.sysCall_init()
+    client.init_coppelia()
     client.run_coppelia()
