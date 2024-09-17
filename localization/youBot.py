@@ -101,10 +101,10 @@ class YouBot:
         self.youBot_ref = self.sim.getObject("/youBot_ref")
         # Wheel Joints: front left, rear left, rear right, front right
         self.wheels = []
-        self.wheels.append(self.sim.getObject("/rollingJoint_fl"))
-        self.wheels.append(self.sim.getObject("/rollingJoint_rl"))
-        self.wheels.append(self.sim.getObject("/rollingJoint_fr"))
-        self.wheels.append(self.sim.getObject("/rollingJoint_rr"))
+        self.wheels.append(self.sim.getObject("/rollingJoint_fl"))  # wheels[0]
+        self.wheels.append(self.sim.getObject("/rollingJoint_rl"))  # wheels[1]
+        self.wheels.append(self.sim.getObject("/rollingJoint_fr"))  # wheels[2]
+        self.wheels.append(self.sim.getObject("/rollingJoint_rr"))  # wheels[3]
         # Arm Joints
         self.arms = []
         for i in range(5):

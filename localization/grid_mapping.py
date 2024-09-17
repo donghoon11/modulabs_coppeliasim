@@ -37,7 +37,7 @@ class MappingBot(YouBot):
         theta = self.sim.getObjectOrientation(self.youBot_ref)[2]
         return x, y, theta
     
-    def run_step(self, cout):
+    def run_step(self, count):
         self.control_car()
         
         scan = self.read_lidars()

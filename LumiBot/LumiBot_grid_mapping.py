@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from LumiBot import LumiBot
+from LumiBot_keyboard import LumiBot
 
 class MappingBot(LumiBot):
     def __init__(self):
