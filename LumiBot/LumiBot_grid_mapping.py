@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from LumiBot_keyboard import LumiBot
+from LumiBot import LumiBot
 
 class MappingBot(LumiBot):
     def __init__(self):
@@ -21,9 +21,65 @@ class MappingBot(LumiBot):
         theta = self.sim.getObjectOrientation(self.lumiBot_ref)[2]
         return x, y, theta
     
+    def car_control(self):
+        self.sim.setJointTargetVelocity(self.lmotor, self.v_straight)
+        self.sim.setJointTargetVelocity(self.rmotor, self.v_straight)
+        
+        if self.fwd < self.fwd_cutoff:
+            print('going toward the wall, turn right')
+            self.sim.setJointTargetVelocity(self.lmotor, self.v_sharp)
+            self.sim.setJointTargetVelocity(self.rmotor, 0)
+        elif self.fwd > self.fwd_cutoff:
+            if self.avg > self.max_d:
+                print('going away from the wall, turn left')
+                self.sim.setJointTargetVelocity(self.lmotor, self.v - self.dv)
+                self.sim.setJointTargetVelocity(self.rmotor, self.v)
+            elif self.avg < self.min_d:
+                print('going toward the wall, turn right')
+                self.sim.setJointTargetVelocity(self.lmotor, self.v)
+                self.sim.setJointTargetVelocity(self.rmotor, self.v - self.dv)
+            elif self.min_d < self.avg < self.max_d:
+                if self.diff > self.yaw_cutoff:  # LF > LR
+                    print('yaw correction: turn left')
+                    self.sim.setJointTargetVelocity(self.lmotor, self.v - self.dv)
+                    self.sim.setJointTargetVelocity(self.rmotor, self.v)
+                elif self.diff < -self.yaw_cutoff:  # LF < LR
+                    self.sim.setJointTargetVelocity(self.lmotor, self.v)
+                    self.sim.setJointTargetVelocity(self.rmotor, self.v - self.dv)
+    
+    def control_feedback(self):
+        # flag1, LF = self.sim.readProximitySensor(self.sensorLF)
+        # flag2, LR = self.sim.readProximitySensor(self.sensorLR)
+        # flag3, F = self.sim.readProximitySensor(self.sensorF)
+        flag1, LF, _, _, _ = self.sim.readProximitySensor(self.sensorLF)
+        flag2, LR, _, _, _ = self.sim.readProximitySensor(self.sensorLR)
+        flag3, F, _, _, _ = self.sim.readProximitySensor(self.sensorF)
+        
+        if flag1 == 0 and flag2 == 1:
+            self.avg = LR
+            self.diff = 0
+        elif flag1 == 1 and flag2 == 0:
+            self.avg = LF
+            self.diff = 0
+        elif flag1 == 1 and flag2 == 1:
+            self.avg = 0.5 * (LF + LR)
+            self.diff = LF - LR
+        else:
+            self.avg = self.avg_default
+            self.diff = 0
+        
+        if flag3 == 1:
+            self.fwd = F
+        else:
+            self.fwd = self.fwd_default
+        
+        # print(f'avg= {self.avg} diff= {self.diff} fwd= {self.fwd}')
+
     def run_step(self, count):
         # self.control_car()
-        
+        self.car_control()
+        self.control_feedback()
+
         scan = self.read_lidars()
         loc = self.read_ref()
         
@@ -33,7 +89,6 @@ class MappingBot(LumiBot):
 class Grid():
     def __init__(self):
         # grid 전체 배열 크기 100*100 으로 설정.
-        # test 환경 : 5m * 5m
         self.grid = np.zeros((100, 100))
         # plot grid
         r = np.linspace(-5, 5, 101)  # -5부터 5까지 101개의 x 좌표 생성
@@ -44,10 +99,10 @@ class Grid():
         # scan theta
         self.delta = np.pi / 4     # 5개 라이다 -> 4개 간격으로 분해능.
         # -90도 기준으로 각 라이다별 스캔 각도 계산.
-        self.scan_theta = np.array([- np.pi / 2 + self.delta * i for i in range(13)])
-        self.boundary = np.pi / 2 + self.delta / 2      
+        self.scan_theta = np.array([- np.pi / 2 + self.delta * i for i in range(5)])
+        self.boundary = np.pi / 2 + self.delta / 4      
         # min distance
-        self.min_dist = (2 * (0.05**2)) ** 0.5
+        self.min_dist = (2 * (0.05**2)) ** 0.5      # 0.07071
 
     def update(self, loc, scan):
         self.mapping(loc, scan)
@@ -55,23 +110,18 @@ class Grid():
         self.visualize(loc, scan)
 
     def mapping(self, loc, scan):
-        x, y, theta = loc
+        x, y, theta = loc       # lumibot_ref (x,y,yaw)  
         # scan position
-        self.plt_objects = [None] * 7 # 5+2
-        # scan theta
-        self.delta = np.pi / 4     # 5개 라이다 -> 4개 간격으로 분해능.
-        # -90도 기준으로 각 라이다별 스캔 각도 계산.
-        self.scan_theta = np.array([- np.pi / 2 + self.delta * i for i in range(13)])
-        self.boundary = np.pi / 2 + self.delta / 2      
-        # min distance
-        rx = x + 2.25 * np.cos(theta)
-        ry = y + 2.25 * np.sin(theta)
+        # 라이다 위치는 ref postion 으로부터 앞으로 0.275 m 으로 조정.
+        rx = x + 0.1 * np.cos(theta)
+        ry = y + 0.1 * np.sin(theta)
         # range
-        dist = 2.25     # 스캔 센서 감지 최대 거리
+        dist = 1.5     # 스캔 센서 감지 최대 거리
         '''
         i_min, i_max, j_min, j_max는 그리드 맵에서 스캔 범위 내의 인덱스를 결정. 
-        그리드의 해상도는 0.1 미터이고, 그리드 맵이 100 x 100 크기를 가지며, 맵의 중앙이 (0, 0)에 해당
+        그리드의 해상도는 0.1 미터이고, 그리드 맵이 100 x 100 크기를 가지며, 맵의 중앙이 (50, 50)에 해당
         '''
+        # xy_resolution
         i_min = max(0, int((rx - dist) // 0.1 + 50))
         i_max = min(99, int((rx + dist) // 0.1 + 50))
         j_min = max(0, int((ry - dist) // 0.1 + 50))
@@ -80,7 +130,7 @@ class Grid():
         sub_grid = self.grid[j_min : j_max + 1, i_min : i_max + 1]
 
         # x distance
-        gx = np.arange(i_min, i_max +1) * 0.1 + 0.05 -8
+        gx = np.arange(i_min, i_max +1) * 0.1 + 0.05 - 5
         gx = np.repeat(gx.reshape(1,-1), sub_grid.shape[0], axis=0)
         dx = gx - rx
         # y distance
@@ -107,13 +157,13 @@ class Grid():
             res, dist, _, _, _ = scan[i]
             if res == 0:        # 장애물이 없는 경우 -> 해당 방향에서 특정 거리 내에 있는 셀들을 자유 공간으로 간주.
                 area = (
-                    (gd <= 2.25)    # 그리드 상의 각 지점과 로봇 센서 사이의 거리가 2.25 미터 이하인지 확인.
+                    (gd <= 1.5)    # 그리드 상의 각 지점과 로봇 센서 사이의 거리가 2.25 미터 이하인지 확인.
                     * (-self.boundary + self.delta * i <= dtheta)       # i 번째 스캔 데이터가 커버하는 각도 범위 내에 있는 그리드 셀만을 업데이트 대상으로.
                     * (dtheta <= -self.boundary + self.delta * (i +1))
                 )
                 sub_grid[area] -= 0.5   # 위 조건을 만족하는 area 에서 그리드 셀의 값을 0.5 만큼 감소 -> 자유공간 가능성.
             else:       # 장애물 감지.
-                dist = min(2.25, dist)
+                dist = min(1.5, dist)
                 detect_area = (
                     (np.abs(gd - dist) < self.min_dist)     # 그리드 상의 각 지점과 로봇 센서 사이의 거리가 탐지된 거리와 매우 근접한지 여부 호가인.
                     * (-self.boundary + self.delta * i <= dtheta)
@@ -146,12 +196,12 @@ class Grid():
             x, y, color="green", marker="o", markersize=10
         )
         # scan
-        rx = x + 0.275 * np.cos(theta)
-        ry = y + 0.275 * np.sin(theta)
+        rx = x + 0.1 * np.cos(theta)
+        ry = y + 0.1 * np.sin(theta)
         for i, data in enumerate(scan):
             res, dist, _, _, _ = data  # res, dist, point, obj, n
             style = "--r" if res == 1 else "--b"
-            dist = dist if res == 1 else 2.20
+            dist = dist if res == 1 else 1.5
 
             ti = theta + self.scan_theta[i]
             xi = rx + dist * np.cos(ti)

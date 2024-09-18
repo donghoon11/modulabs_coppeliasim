@@ -50,61 +50,7 @@ class LumiBot:
         for id in self.lidars:
             scan.append(self.sim.readProximitySensor(id))
         return scan
-
-    def sysCall_actuation(self):
-        self.sim.setJointTargetVelocity(self.lmotor, self.v_straight)
-        self.sim.setJointTargetVelocity(self.rmotor, self.v_straight)
         
-        if self.fwd < self.fwd_cutoff:
-            print('going toward the wall, turn right')
-            self.sim.setJointTargetVelocity(self.lmotor, self.v_sharp)
-            self.sim.setJointTargetVelocity(self.rmotor, 0)
-        elif self.fwd > self.fwd_cutoff:
-            if self.avg > self.max_d:
-                print('going away from the wall, turn left')
-                self.sim.setJointTargetVelocity(self.lmotor, self.v - self.dv)
-                self.sim.setJointTargetVelocity(self.rmotor, self.v)
-            elif self.avg < self.min_d:
-                print('going toward the wall, turn right')
-                self.sim.setJointTargetVelocity(self.lmotor, self.v)
-                self.sim.setJointTargetVelocity(self.rmotor, self.v - self.dv)
-            elif self.min_d < self.avg < self.max_d:
-                if self.diff > self.yaw_cutoff:  # LF > LR
-                    print('yaw correction: turn left')
-                    self.sim.setJointTargetVelocity(self.lmotor, self.v - self.dv)
-                    self.sim.setJointTargetVelocity(self.rmotor, self.v)
-                elif self.diff < -self.yaw_cutoff:  # LF < LR
-                    self.sim.setJointTargetVelocity(self.lmotor, self.v)
-                    self.sim.setJointTargetVelocity(self.rmotor, self.v - self.dv)
-    
-    def sysCall_sensing(self):
-        # flag1, LF = self.sim.readProximitySensor(self.sensorLF)
-        # flag2, LR = self.sim.readProximitySensor(self.sensorLR)
-        # flag3, F = self.sim.readProximitySensor(self.sensorF)
-        flag1, LF, _, _, _ = self.sim.readProximitySensor(self.sensorLF)
-        flag2, LR, _, _, _ = self.sim.readProximitySensor(self.sensorLR)
-        flag3, F, _, _, _ = self.sim.readProximitySensor(self.sensorF)
-        
-        if flag1 == 0 and flag2 == 1:
-            self.avg = LR
-            self.diff = 0
-        elif flag1 == 1 and flag2 == 0:
-            self.avg = LF
-            self.diff = 0
-        elif flag1 == 1 and flag2 == 1:
-            self.avg = 0.5 * (LF + LR)
-            self.diff = LF - LR
-        else:
-            self.avg = self.avg_default
-            self.diff = 0
-        
-        if flag3 == 1:
-            self.fwd = F
-        else:
-            self.fwd = self.fwd_default
-        
-        # print(f'avg= {self.avg} diff= {self.diff} fwd= {self.fwd}')
-    
     def cleanup(self):
         pass
 
@@ -118,8 +64,9 @@ class LumiBot:
             # step
             self.run_step(count)
             self.sim.step()
-            self.sysCall_actuation()
-            self.sysCall_sensing()
+            # self.sysCall_actuation()
+            # self.sysCall_sensing()
+        # self.sim.stopSimulation()
     
     @abstractmethod
     def run_step(self, count):
