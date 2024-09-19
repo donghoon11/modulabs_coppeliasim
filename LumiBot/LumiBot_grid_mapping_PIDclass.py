@@ -3,10 +3,31 @@ import matplotlib.pyplot as plt
 
 from LumiBot import LumiBot
 
+# class PIDController:
+#     def __init__(self, kp, ki, kd):
+#         self.kp = kp
+#         self.ki = ki
+#         self.kd = kd
+#         self.integral = 0
+#         self.prev_error = 0
+
+#     def compute(self, setpoint, measured_value, dt):
+#         error = setpoint - measured_value
+#         self.integral += error * dt
+#         dd = (error - self.prev_error) / dt
+#         output = self.kp * error + self.ki * self.integral + self.kd * dd
+#         self.prev_error = error
+        
+#         return output
+
+
 class MappingBot(LumiBot):
     def __init__(self):
         super().__init__()
         self.grid = Grid()
+        # self.pid_fwd = PIDController(kp=0.01, ki=0.01, kd=0.05)
+        # self.pid_yaw = PIDController(kp=0.01, ki=0.01, kd=0.05)
+
 
     def read_ref(self):
         x, y = self.sim.getObjectPosition(self.lumiBot_ref)[:2]
@@ -21,10 +42,28 @@ class MappingBot(LumiBot):
         theta = self.sim.getObjectOrientation(self.lumiBot_ref)[2]
         return x, y, theta
     
+
     def car_control(self):
+        # dt = 0.05
+
+        # # 전방 거리 제어 (fwd_cutoff 거리 유지)
+        # fwd_error = self.fwd_cutoff - self.fwd
+        # v_control = self.pid_fwd.compute(0, fwd_error, dt)
+
+        # # 회전 제어 (yaw_cutoff 값 유지)
+        # yaw_error = self.yaw_cutoff - self.diff
+        # w_control = self.pid_yaw.compute(0, yaw_error, dt)
+
+        # # 좌우 바퀴 속도 설정
+        # left_speed = self.v_straight + v_control - w_control
+        # right_speed = self.v_straight + v_control + w_control
+
         self.sim.setJointTargetVelocity(self.lmotor, self.v_straight)
         self.sim.setJointTargetVelocity(self.rmotor, self.v_straight)
-        
+
+        # self.sim.setJointTargetVelocity(self.lmotor, left_speed)
+        # self.sim.setJointTargetVelocity(self.rmotor, right_speed)
+
         if self.fwd < self.fwd_cutoff:
             print('going toward the wall, turn right')
             self.sim.setJointTargetVelocity(self.lmotor, self.v_sharp)
