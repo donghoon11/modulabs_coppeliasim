@@ -11,11 +11,12 @@ class LocalizationBot(YouBot):
         self.mcl = MCL()
 
     def read_ref(self):
-        x, y = self.sim.getObjectPosition(self.youBot_ref)
+        x, y = self.sim.getObjectPosition(self.youBot_ref)[:2]
         theta = self.sim.getObjectOrientation(self.youBot_ref)[2]
+        
         return x, y, theta
     
-    def run_step(self):
+    def run_step(self, count):
         self.control_car()
         scan = self.read_lidars()
         loc = self.read_ref()
@@ -35,9 +36,9 @@ class Particle:
 class MCL:
     def __init__(self):
         # particles : 1000 
-        self.particles = [Particle() for i in range(1000)]
+        self.particles = [Particle() for i in range(500)]
         # grid
-        with open("/home/oh/my_coppeliasim/modulabs_coppeliasim/mapping/mapping.npy","rb") as f:
+        with open("/home/oh/my_coppeliasim/modulabs_coppeliasim/localization/mapping_test.npy","rb") as f:
             self.grid = np.load(f)
         # plot grid
         r = np.linspace(-5, 5, 101)
@@ -57,30 +58,58 @@ class MCL:
         scan_vec = np.array(
             [data[1] if data[0] == 1 else 2.2 for i, data in enumerate(scan)]
         )
+        # if self.loc_prev:
+        #     prev_theta = self.loc_prev[2]
+        #     dr = np.array(
+        #         [
+        #             [np.cos(-prev_theta), -np.sin(-prev_theta)],
+        #             [np.sin(-prev_theta), np.cos(-prev_theta)],
+        #         ]
+        #     ).dot(np.array([loc[0] - self.loc_prev[0], loc[1] - self.loc_prev[1]]))
+        #     dtheta = loc[2] - self.loc_prev[2]
+        #     # update position
+        #     for particle in self.particles:
+        #         dp = np.array(
+        #             [
+        #                 [np.cos(particle.theta), -np.sin(particle.theta)],
+        #                 [np.sin(particle.theta), np.cos(particle.theta)],
+        #             ]
+        #         ).dot(dr)
+        #         particle.x += dp[0]
+        #         particle.x = max(min(particle.x, 4.9), -4.9)
+        #         particle.y += dp[1]
+        #         particle.y = max(min(particle.y, 4.9), -4.9)
+        #         particle.theta += dtheta
+        #         # init scan
+        #         particle.scan[:] = 2.2
         if self.loc_prev:
             prev_theta = self.loc_prev[2]
-            dr = np.array(
-                [
-                    [np.cos(-prev_theta), -np.sin(-prev_theta)],
-                    [np.sin(-prev_theta), np.cos(-prev_theta)],
-                ]
-            ).dot(np.array([loc[0] - self.loc_prev[0], loc[1] - self.loc_prev[1]]))
+            dr_x, dr_y = loc[0] - self.loc_prev[0], loc[1] - self.loc_prev[1]
+            cos_theta = np.cos(-prev_theta)
+            sin_theta = np.sin(-prev_theta)
+            dr = np.array([cos_theta * dr_x - sin_theta * dr_y, sin_theta * dr_x + cos_theta * dr_y])
             dtheta = loc[2] - self.loc_prev[2]
-            # update position
-            for particle in self.particles:
-                dp = np.array(
-                    [
-                        [np.cos(particle.theta), -np.sin(particle.theta)],
-                        [np.sin(particle.theta), np.cos(particle.theta)],
-                    ]
-                ).dot(dr)
-                particle.x += dp[0]
-                particle.x = max(min(particle.x, 4.9), -4.9)
-                particle.y += dp[1]
-                particle.y = max(min(particle.y, 4.9), -4.9)
-                particle.theta += dtheta
-                # init scan
+
+            particle_x = np.array([p.x for p in self.particles])
+            particle_y = np.array([p.y for p in self.particles])
+            particle_theta = np.array([p.theta for p in self.particles])
+
+            cos_p_theta = np.cos(particle_theta)
+            sin_p_theta = np.sin(particle_theta)
+            dx = cos_p_theta * dr[0] - sin_p_theta * dr[1]
+            dy = sin_p_theta * dr[0] + cos_p_theta * dr[1]
+
+            particle_x = np.clip(particle_x + dx, -4.9, 4.9)
+            particle_y = np.clip(particle_y + dy, -4.9, 4.9)
+            particle_theta += dtheta
+
+            for i, particle in enumerate(self.particles):
+                particle.x = particle_x[i]
+                particle.y = particle_y[i]
+                particle.theta = particle_theta[i]
                 particle.scan[:] = 2.2
+
+
             # virtual scan & calc weight
             self.virtual_scan(scan_vec)
             self.resample()
@@ -131,16 +160,17 @@ class MCL:
             particle.weight = 0.1 / (np.linalg.norm(scan_vec - particle.scan) + 1e-2)
 
     def resample(self):
-        weights = np.array([Particle.weight for particle in self.particles])
+        weights = np.array([p.weight for p in self.particles])
         weights /= np.sum(weights)
         particles = np.random.choice(self.particles, len(self.particles), p=weights)
-        particles = [copy.deepcopy(particle) for particle in particles]
-        for particle in particles:
+        self.particles = [copy.deepcopy(p) for p in particles]
+        
+        for particle in self.particles:
             particle.x += np.random.randn() * self.sigma
             particle.y += np.random.randn() * self.sigma
             particle.theta = np.random.randn() * self.sigma
         self.sigma = max(self.sigma * 0.99, 0.015)
-        self.particles = particles
+        # self.particles = particles
 
     def visualize(self, loc, scan):
         x, y, theta = loc

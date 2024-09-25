@@ -7,6 +7,7 @@ from LumiBot_sensor13 import LumiBot_sensor13
 #     def __init__(self, kp, ki, kd):
 #         self.kp = kp
 #         self.ki = ki
+
 #         self.kd = kd
 #         self.integral = 0
 #         self.prev_error = 0
@@ -115,7 +116,6 @@ class MappingBot(LumiBot_sensor13):
         # print(f'avg= {self.avg} diff= {self.diff} fwd= {self.fwd}')
 
     def run_step(self, count):
-        # self.control_car()
         self.car_control()
         self.control_feedback()
 
@@ -130,8 +130,8 @@ class Grid():
         # grid 전체 배열 크기 100*100 으로 설정.
         self.grid = np.zeros((100, 100))
         # plot grid
-        r = np.linspace(-5, 5, 101)  # -5부터 5까지 101개의 x 좌표 생성
-        p = np.linspace(-5, 5, 101)  # -5부터 5까지 101개의 y 좌표 생성
+        r = np.linspace(-5, 5, 100)  # -5부터 5까지 101개의 x 좌표 생성
+        p = np.linspace(-5, 5, 100)  # -5부터 5까지 101개의 y 좌표 생성
         self.R, self.P = np.meshgrid(r, p)  # 2D 그리드 생성
         # plot object
         self.plt_objects = [None] * 15 # 13+2
@@ -218,7 +218,7 @@ class Grid():
         np.clip(self.grid, -5, 5, out=self.grid)        # 마지막으로 그리드의 모든 셀 값이 -5에서 5 사이로 제한.
 
     def save(self):
-        with open("/home/oh/my_coppeliasim/modulabs_coppeliasim/LumiBot/mapping.npy", "wb") as f:
+        with open("/home/oh/my_coppeliasim/modulabs_coppeliasim/LumiBot/mapping_2.npy", "wb") as f:
             np.save(f, self.grid)
 
     def visualize(self, loc, scan):

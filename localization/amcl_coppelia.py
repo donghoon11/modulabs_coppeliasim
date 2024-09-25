@@ -1,123 +1,135 @@
 import copy
 import numpy as np
 import matplotlib.pyplot as plt
+from dataclasses import dataclass
 
 from youBot import YouBot
-
 
 class LocalizationBot(YouBot):
     def __init__(self):
         super().__init__()
-        self.amcl = AdvancedAdaptiveMonteCarloLocalization()
+        self.amcl = AMCL()
 
     def read_ref(self):
         x, y = self.sim.getObjectPosition(self.youBot_ref)[:2]
         theta = self.sim.getObjectOrientation(self.youBot_ref)[2]
+        
         return x, y, theta
-
+    
     def run_step(self, count):
-        # car control
         self.control_car()
-        # read lidars
         scan = self.read_lidars()
-        # read youBot_ref
         loc = self.read_ref()
         # update grid
         self.amcl.update(loc, scan)
 
 
+@dataclass
 class Particle:
+    x: float = np.random.uniform(-5, 5)
+    y: float = np.random.uniform(-5, 5)
+    theta: float = np.random.uniform(-np.pi, np.pi)
+    scan: np.array = np.full(13, 2.2)
+    weight: float = 0.01
+
+
+class AMCL:
     def __init__(self):
-        self.x: float = np.random.uniform(-5, 5)
-        self.y: float = np.random.uniform(-5, 5)
-        self.theta: float = np.random.uniform(-np.pi, np.pi)
-        self.scan: np.array = np.full(13, 2.2)
-        self.weight: float = 0.01
+        # particles : Adaptive MCL uses a dynamic number of particles
+        self.num_particles = 300
+        self.min_particles = 100
+        self.max_particles = 800
+        self.particles = [Particle() for i in range(self.num_particles)]
 
-    def add_noise(self, move_noise, turn_noise):
-        self.x += np.random.randn() * move_noise
-        self.y += np.random.randn() * move_noise
-        self.theta += np.random.randn() * turn_noise
-
-
-class AdvancedAdaptiveMonteCarloLocalization:
-    def __init__(self):
-        # Particle settings
-        self.particles = [Particle() for _ in range(200)]
-        self.min_particles = 50
-        self.max_particles = 2000
-        self.move_noise = 0.05  # 노이즈 추가
-        self.turn_noise = 0.02  # 회전 시 노이즈 추가
-        self.threshold = 0.3  # Resampling threshold
-        self.particle_expansion_rate = 50
-
-        # Grid map
-        with open("/home/oh/my_coppeliasim/modulabs_coppeliasim/mapping/mapping.npy", "rb") as f:
+        # grid
+        with open("/home/oh/my_coppeliasim/modulabs_coppeliasim/localization/mapping_test.npy","rb") as f:
             self.grid = np.load(f)
-
-        # Plotting grid
+        
+        # plot grid
         r = np.linspace(-5, 5, 101)
         p = np.linspace(-5, 5, 101)
         self.R, self.P = np.meshgrid(r, p)
-        self.plt_objects = [None] * (15 + 1 + 13)  # For grid, robot, scans, particles
-
-        # Scanner and delta configuration
+        
+        # plot object
+        self.plt_objects = [None] * (15 + 1 + 13)  # grid, robot, scans (13), particle
+        
+        # scan angles
         self.delta = np.pi / 12
-        self.scan_theta = np.array([-np.pi / 2 + self.delta * i for i in range(13)])
+        self.sacn_theta = np.array([-np.pi / 2 + self.delta * i for i in range(13)])
         self.boundary = np.pi / 2 + self.delta / 2
+        
+        # localization vars.
+        self.sigma = 1.0    # noise weight
         self.loc_prev = None
+        self.kld_threshold = 0.05   # KLD threshold to adapt number of particles
+        self.epsilon = 0.01     # Error tolerance for KLD
 
-        # Parameters for adaptive resampling
-        self.sigma = 1.0
-        self.effective_sample_size_threshold = 0.5  # For adaptive resampling
 
     def update(self, loc, scan):
-        scan_vec = np.array([data[1] if data[0] == 1 else 2.2 for _, data in enumerate(scan)])
+        scan_vec = np.array(
+            [data[1] if data[0] == 1 else 2.2 for data in scan]
+        )
+
         if self.loc_prev:
             prev_theta = self.loc_prev[2]
-            dr = np.array([[np.cos(-prev_theta), -np.sin(-prev_theta)],
-                           [np.sin(-prev_theta), np.cos(-prev_theta)]]
-                          ).dot(np.array([loc[0] - self.loc_prev[0], loc[1] - self.loc_prev[1]]))
+            dr_x, dr_y = loc[0] - self.loc_prev[0], loc[1] - self.loc_prev[1]
+            cos_theta = np.cos(-prev_theta)
+            sin_theta = np.sin(-prev_theta)
+            dr = np.array([cos_theta * dr_x - sin_theta * dr_y, 
+                           sin_theta * dr_x + cos_theta * dr_y])
             dtheta = loc[2] - self.loc_prev[2]
 
-            # Update particle positions with noise
-            for particle in self.particles:
-                dp = np.array([[np.cos(particle.theta), -np.sin(particle.theta)],
-                               [np.sin(particle.theta), np.cos(particle.theta)]]
-                              ).dot(dr)
-                particle.x += dp[0]
-                particle.y += dp[1]
-                particle.theta += dtheta
+            particle_x = np.array([p.x for p in self.particles])
+            particle_y = np.array([p.y for p in self.particles])
+            particle_theta = np.array([p.theta for p in self.particles])
 
-                # Apply noise to movement and turning
-                particle.add_noise(self.move_noise, self.turn_noise)
+            cos_p_theta = np.cos(particle_theta)
+            sin_p_theta = np.sin(particle_theta)
+            dx = cos_p_theta * dr[0] - sin_p_theta * dr[1]
+            dy = sin_p_theta * dr[0] + cos_p_theta * dr[1]
 
-            # Simulate scan & update weights
+            particle_x = np.clip(particle_x + dx, -4.9, 4.9)
+            particle_y = np.clip(particle_y + dy, -4.9, 4.9)
+            particle_theta += dtheta
+
+            for i, particle in enumerate(self.particles):
+                particle.x = particle_x[i]
+                particle.y = particle_y[i]
+                particle.theta = particle_theta[i]
+                particle.scan[:] = 2.2
+            # virtual scan & calc weight
             self.virtual_scan(scan_vec)
-            self.resample()
-            self.adjust_particle_count(scan_vec)
-
+            self.adaptive_resample()           
         self.visualize(loc, scan)
         self.loc_prev = loc
+    
 
     def virtual_scan(self, scan_vec):
-        for particle in self.particles:
+       for particle in self.particles:
+            # range
             dist = 2.25
             i_min = max(0, int((particle.x - dist) // 0.1 + 50))
             i_max = min(99, int((particle.x + dist) // 0.1 + 50))
             j_min = max(0, int((particle.y - dist) // 0.1 + 50))
             j_max = min(99, int((particle.y + dist) // 0.1 + 50))
 
+            # sub grid
             sub_grid = self.grid[j_min : j_max + 1, i_min : i_max + 1]
+
+            # x distance
             gx = np.arange(i_min, i_max + 1) * 0.1 + 0.05 - 5
             gx = np.repeat(gx.reshape(1, -1), sub_grid.shape[0], axis=0)
             dx = gx - particle.x
 
+            # y distance
             gy = np.arange(j_min, j_max + 1) * 0.1 + 0.05 - 5
             gy = np.repeat(gy.reshape(1, -1).T, sub_grid.shape[1], axis=1)
             dy = gy - particle.y
 
+            # distance
             gd = (dx**2 + dy**2) ** 0.5
+
+            # theta diff
             gtheta = np.arccos(dx / gd) * ((dy > 0) * 2 - 1)
             dtheta = gtheta - particle.theta
 
@@ -126,6 +138,7 @@ class AdvancedAdaptiveMonteCarloLocalization:
             while np.min(dtheta) < -np.pi:
                 dtheta += (dtheta < -np.pi) * 2 * np.pi
 
+            # calc distance
             for i in range(13):
                 area = (
                     (gd < dist)
@@ -134,61 +147,79 @@ class AdvancedAdaptiveMonteCarloLocalization:
                 )
                 area_grid = sub_grid[area]
                 area_dist = gd[area]
+                assert area_grid.shape == area_dist.shape
                 area_valid = area_grid > 0
                 if area_valid.shape[0] > 0 and np.max(area_valid) > 0:
                     particle.scan[i] = np.min(area_dist[area_valid])
-
             particle.weight = 0.1 / (np.linalg.norm(scan_vec - particle.scan) + 1e-2)
 
-    def resample(self):
-        weights = np.array([particle.weight for particle in self.particles])
+    def adaptive_resample(self):
+        # calculate weights
+        weights = np.array([p.weight for p in self.particles])
         weights /= np.sum(weights)
-        eff_N = 1.0 / np.sum(weights**2)  # Effective particle count
 
-        if eff_N < self.effective_sample_size_threshold * len(self.particles):
-            particles = np.random.choice(self.particles, len(self.particles), p=weights)
-            particles = [copy.deepcopy(particle) for particle in particles]
+        # resample based on weights
+        particles = np.random.choice(self.particles, len(self.particles), p=weights)
+        self.particles = [copy.deepcopy(p) for p in particles]
 
-            for particle in particles:
-                particle.add_noise(self.move_noise, self.turn_noise)
+        # calculate the KLD-sampling dynamic number of particles
+        eff_particles = 1 / np.sum(weights**2)
+        if eff_particles <= 0 or np.isnan(eff_particles):
+            eff_particles = 1       # prevent zero or NaN values
 
-            self.sigma = max(self.sigma * 0.99, 0.015)
-            self.particles = particles
+        # calculate KLD-sampling dynamic number of particles
+        try:
+            kld_error = np.sqrt(self.epsilon * (1-eff_particles) / eff_particles)
+            if np.isnan(kld_error):
+                kld_error = 0
+            print(f'eff_particles = {eff_particles}')
+            # print(f'kld_error : {kld_error}')
+        except ValueError:
+            kld_error = 0       # ensure kld_error is non-negative
+        new_num_particles = min(self.max_particles, max(self.min_particles, int(self.num_particles * (1 + kld_error))))
+        
+        # adjust the number of particles
+        if new_num_particles != self.num_particles:
+            self.num_particles = new_num_particles
+            self.particles = [Particle() for _ in range(self.num_particles)]
 
-    def adjust_particle_count(self, scan_vec):
-        weights = np.array([particle.weight for particle in self.particles])
-        variance = np.var(weights)
+        # add noise for new particles
+        for particle in self.particles:
+            particle.x += np.random.randn() * self.sigma
+            particle.y += np.random.randn() * self.sigma
+            particle.theta = np.random.randn() * self.sigma
+        self.sigma = max(self.sigma * 0.99, 0.015)
 
-        if variance < self.threshold and len(self.particles) < self.max_particles:
-            new_particles = [Particle() for _ in range(self.particle_expansion_rate)]
-            self.particles.extend(new_particles)
-        elif variance > self.threshold and len(self.particles) > self.min_particles:
-            self.particles = self.particles[:len(self.particles) - self.particle_expansion_rate]
 
     def visualize(self, loc, scan):
         x, y, theta = loc
+        # clear object
         for object in self.plt_objects:
             if object:
                 object.remove()
 
+        # grid
         grid = -self.grid + 5
         self.plt_objects[0] = plt.pcolor(self.R, self.P, grid, cmap="gray")
 
-        (self.plt_objects[1],) = plt.plot(x, y, color="green", marker="o", markersize=10)
-
+        # robot
+        (self.plt_objects[1],) = plt.plot(x, y, color="green", marker="o", markersize=5)
+        
+        # scan
         rx = x + 0.275 * np.cos(theta)
         ry = y + 0.275 * np.sin(theta)
         for i, data in enumerate(scan):
-            res, dist, _, _, _ = data
+            res, dist, _, _, _ = data  # res, dist, point, obj, n
             res = res > 0
             style = "--r" if res == 1 else "--b"
             dist = dist if res == 1 else 2.20
 
-            ti = theta + self.scan_theta[i]
+            ti = theta + self.sacn_theta[i]
             xi = rx + dist * np.cos(ti)
             yi = ry + dist * np.sin(ti)
             (self.plt_objects[2 + i],) = plt.plot([rx, xi], [ry, yi], style)
 
+        # particle
         x = [p.x for p in self.particles]
         y = [p.y for p in self.particles]
         c = [p.weight for p in self.particles]

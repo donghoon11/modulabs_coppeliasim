@@ -33,7 +33,7 @@ class YouBot:
         self.control = Control()
 
     def on_press(self, key):
-        deltaX, deltaZ = 1.0, np.pi / 10
+        deltaX, deltaZ = 0.5, np.pi / 20
         if key == Key.up:
             self.control.vel_X += deltaX
             self.control.vel_Z += min(deltaZ, abs(self.control.vel_Z)) * (
