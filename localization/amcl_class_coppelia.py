@@ -23,7 +23,10 @@ class LocalizationBot(YouBot):
         scan = self.read_lidars()
         loc = self.read_ref()
         # update grid
-        self.amcl.update(loc, scan)
+        # self.amcl.update(loc, scan)
+        v, omega = 0.5, 0.1
+        dt = 0.1
+        self.amcl.rk4_update(dt, v, omega, loc, scan)
 
 
 @dataclass
@@ -38,9 +41,9 @@ class Particle:
 class AMCL:
     def __init__(self):
         # particles : Adaptive MCL uses a dynamic number of particles
-        self.num_particles = 500
-        self.min_particles = 100
-        self.max_particles = 800
+        self.num_particles = 1000
+        self.min_particles = 500
+        self.max_particles = 1500
         self.particles = [Particle() for i in range(self.num_particles)]
 
         # grid
@@ -104,7 +107,77 @@ class AMCL:
             self.adaptive_resample()           
         self.visualize(loc, scan)
         self.loc_prev = loc
-    
+
+
+    def rk4_update(self, dt, v, omega, loc, scan):
+        scan_vec = np.array(
+            [data[1] if data[0] == 1 else 2.2 for data in scan]
+        )
+
+        if self.loc_prev:
+            prev_theta = self.loc_prev[2]
+            dr_x, dr_y = loc[0] - self.loc_prev[0], loc[1] - self.loc_prev[1]
+            dtheta = loc[2] - self.loc_prev[2]
+
+            cos_theta = np.cos(-prev_theta)
+            sin_theta = np.sin(-prev_theta)
+            dr = np.array([cos_theta * dr_x - sin_theta * dr_y, 
+                           sin_theta * dr_x + cos_theta * dr_y])
+
+            particle_x = np.array([p.x for p in self.particles])
+            particle_y = np.array([p.y for p in self.particles])
+            particle_theta = np.array([p.theta for p in self.particles])
+
+            # RK4
+            dt = 0.1
+            v = np.linalg.norm(dr) / dt
+            omega = dtheta / dt
+            
+            for i in range(self.num_particles):
+                x0, y0, theta0 = particle_x[i], particle_y[i], particle_theta[i]
+
+                v_noise = v + np.random.randn() * 0.01
+                omega_noise = omega + np.random.randn() * 0.01
+
+                k1_x = v_noise * np.cos(theta0)
+                k1_y = v_noise * np.sin(theta0)
+                k1_theta = omega_noise
+
+                k2_x = v_noise * np.cos(theta0 + 0.5 * dt * k1_theta)
+                k2_y = v_noise * np.sin(theta0 + 0.5 * dt * k1_theta)
+                k2_theta = omega_noise
+
+                k3_x = v_noise * np.cos(theta0 + 0.5 * dt * k2_theta)
+                k3_y = v_noise * np.sin(theta0 + 0.5 * dt * k2_theta)
+                k3_theta = omega_noise
+
+                k4_x = v_noise * np.cos(theta0 + dt * k3_theta)
+                k4_y = v_noise * np.sin(theta0 + dt * k3_theta)
+                k4_theta = omega_noise
+
+                particle_x[i] += (dt / 6.0) * (k1_x + 2 * k2_x + 2 * k3_x + k4_x)
+                # particle_x[i] = np.clip(particle_x[i], -4.99, 4.99)
+                particle_y[i] += (dt / 6.0) * (k1_y + 2 * k2_y + 2 * k3_y + k4_y)
+                # particle_y[i] = np.clip(particle_y[i], -4.99, 4.99)
+                particle_theta[i] += (dt / 6.0) * (k1_theta + 2 * k2_theta + 2 * k3_theta + k4_theta)
+
+                particle_theta[i] = (particle_theta[i] + np.pi) % (2 * np.pi) - np.pi
+
+            particle_x = np.clip(particle_x, -4.9, 4.9)
+            particle_y = np.clip(particle_y, -4.9, 4.9)
+            
+            for i, particle in enumerate(self.particles):
+                particle.x = particle_x[i]
+                particle.y = particle_y[i]
+                particle.theta = particle_theta[i]
+                particle.scan[:] = 2.2
+
+            # virtual scan & calc weight
+            self.virtual_scan(scan_vec)
+            self.adaptive_resample()           
+        self.visualize(loc, scan)
+        self.loc_prev = loc
+
 
     def virtual_scan(self, scan_vec):
        for particle in self.particles:
