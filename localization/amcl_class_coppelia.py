@@ -46,9 +46,9 @@ class Particle:
 class AMCL:
     def __init__(self):
         # particles : Adaptive MCL uses a dynamic number of particles
-        self.num_particles = 1000
+        self.num_particles = 800
         self.min_particles = 500
-        self.max_particles = 1500
+        self.max_particles = 1000
         self.particles = [Particle() for i in range(self.num_particles)]
 
         # grid

@@ -136,7 +136,6 @@ def ICP(source, target, iteration=10, threhold = 1e-7):
 
         if (error < threhold):
             break
-
         Tm = find_approximation_transform(local_source, target[indices])
         local_source = pcd_transform(local_source, Tm)
         final_Tm = np.matmul(Tm, final_Tm)
