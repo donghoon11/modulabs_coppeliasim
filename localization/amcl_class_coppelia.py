@@ -7,6 +7,9 @@ from dataclasses import dataclass
 
 from youBot import YouBot
 
+from scipy.spatial import KDTree
+
+
 class LocalizationBot(YouBot):
     def __init__(self):
         super().__init__()
@@ -22,11 +25,13 @@ class LocalizationBot(YouBot):
         self.control_car()
         scan = self.read_lidars()
         loc = self.read_ref()
-        # update grid
+        ### update grid
         # self.amcl.update(loc, scan)
-        v, omega = 0.5, 0.1
-        dt = 0.1
-        self.amcl.rk4_update(dt, v, omega, loc, scan)
+        # v, omega = 0.5, 0.1
+        # dt = 0.1
+        # self.amcl.rk4_update(dt, v, omega, loc, scan)
+
+        self.amcl.icp_update(loc, scan)
 
 
 @dataclass
@@ -69,6 +74,49 @@ class AMCL:
         self.kld_threshold = 0.05   # KLD threshold to adapt number of particles
         self.epsilon = 0.01     # Error tolerance for KLD
 
+    
+    def icp(self, scan_data, virtual_scan_data, max_iteration = 20, threshold=1e-4):
+        """
+        Iterative Closet Poitn algorithm to registrate points (to align virutal scan and real scan)
+        : return : 최적의 변환 행렬
+        """
+        prev_error = float('inf')
+        for i in range(max_iteration):
+            # closet point matching using KDTree
+            tree =KDTree(virtual_scan_data)
+            distances, indices = tree.query(scan_data)
+
+            # select the corresponding poitns in virtual_scan
+            corr_points = virtual_scan_data[indices]
+            
+            # compute the centroids
+            scan_centroid = np.mean(scan_data, axis=0)
+            corr_centroid = np.mean(corr_points, axis=0)
+
+            # center the points around the centroids
+            scan_center = scan_data - scan_centroid
+            corr_center = corr_points - corr_centroid
+
+            # SVD to compute the rot.
+            H = np.dot(scan_center.T, corr_center)
+            U, _, V_T = np.linalg.svd(H)
+            R = np.dot(V_T.T, U.T)
+
+            if np.linalg.det(R) < 0:
+                V_T[-1, :] *= -1
+                R = np.dot(V_T.T, U.T)
+
+            t = corr_centroid.T - np.dot(R, scan_centroid.T)
+            scan_data_trans = np.dot(scan_data, R.T) + t.T
+
+            # optimization
+            error = np.mean(distances)
+            if abs(prev_error - error) < threshold:
+                break
+            prev_error = error
+
+        return R, t
+
 
     def update(self, loc, scan):
         scan_vec = np.array(
@@ -107,6 +155,60 @@ class AMCL:
             self.adaptive_resample()           
         self.visualize(loc, scan)
         self.loc_prev = loc
+
+
+    def icp_update(self, loc, scan):
+        scan_vec = np.array(
+            [data[1] if data[0] == 1 else 2.2 for data in scan]
+        )
+
+        if self.loc_prev:
+            prev_theta = self.loc_prev[2]
+            dr_x, dr_y = loc[0] - self.loc_prev[0], loc[1] - self.loc_prev[1]
+            cos_theta = np.cos(-prev_theta)
+            sin_theta = np.sin(-prev_theta)
+            dr = np.array([cos_theta * dr_x - sin_theta * dr_y, 
+                           sin_theta * dr_x + cos_theta * dr_y])
+            dtheta = loc[2] - self.loc_prev[2]
+
+            particle_x = np.array([p.x for p in self.particles])
+            particle_y = np.array([p.y for p in self.particles])
+            particle_theta = np.array([p.theta for p in self.particles])
+
+            cos_p_theta = np.cos(particle_theta)
+            sin_p_theta = np.sin(particle_theta)
+            dx = cos_p_theta * dr[0] - sin_p_theta * dr[1]
+            dy = sin_p_theta * dr[0] + cos_p_theta * dr[1]
+
+            particle_x = np.clip(particle_x + dx, -4.9, 4.9)
+            particle_y = np.clip(particle_y + dy, -4.9, 4.9)
+            particle_theta += dtheta
+
+            for i, particle in enumerate(self.particles):
+                particle.x = particle_x[i]
+                particle.y = particle_y[i]
+                particle.theta = particle_theta[i]
+                particle.scan[:] = 2.2
+            # virtual scan
+            self.virtual_scan(scan_vec)
+
+            # iterative closet point
+            for particle in self.particles:
+                real_scan = np.vstack([np.cos(self.scan_theta) * scan_vec, np.sin(self.scan_theta) * scan_vec]).T
+                virtual_scan = np.vstack([np.cos(self.scan_theta) * particle.scan, np.sin(self.scan_theta) * particle.scan]).T
+                R, t = self.icp(real_scan, virtual_scan)
+
+                position = np.array([particle.x, particle.y]).T
+                new_position = np.dot(R, position) + t
+                particle.x, particle.y = new_position
+                particle.theta += np.arctan2(R[1,0], R[0,0])
+
+            # calculate weights
+            self.adaptive_resample()           
+        self.visualize(loc, scan)
+        self.loc_prev = loc
+
+
 
 
     def rk4_update(self, dt, v, omega, loc, scan):
