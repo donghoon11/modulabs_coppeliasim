@@ -65,11 +65,6 @@ class Pioneer:
         self.simVision.destroyVelodyneVPL16(self.h)
 
 
-    def run_step(self):
-        self.sysCall_sensing()
-        self.sysCall_cleanup()
-
-
     def run_coppelia(self):
         self.sim.setStepping(True)
         self.sim.startSimulation()
