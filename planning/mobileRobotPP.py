@@ -158,28 +158,29 @@ class MobileRobotPP:
 
 
     def run_step(self):
-        goal_position = self.get_target_position()
+        # self.sim.setStepping(True)
+        self.sim.startSimulation()
+        while self.run_flag:
+            goal_position = self.get_target_position()
 
-        # Adjust goal if collision is detected:
-        while self.check_collides_at(goal_position):
-            goal_position[0] -= 0.09
+            # Adjust goal if collision is detected:
+            while self.check_collides_at(goal_position):
+                goal_position[0] -= 0.09
 
-        # Plan and follow the path
-        path = self.move_robot_to_position(goal_position)
-        if path:
-            self.follow_path(path)
+            # Plan and follow the path
+            path = self.move_robot_to_position(goal_position)
+            if path:
+                self.follow_path(path)
 
-        # Stop
-        self.sim.setJointTargetVelocity(self.leftMotorHandle, 0.0)
-        self.sim.setJointTargetVelocity(self.rightMotorHandle, 0.0)
+            # Stop
+            self.sim.setJointTargetVelocity(self.leftMotorHandle, 0.0)
+            self.sim.setJointTargetVelocity(self.rightMotorHandle, 0.0)
 
-        time.sleep(0.01)
+            time.sleep(0.01)
+        self.sim.stopSimulation()
 
 
 if __name__ == "__main__":
     controller = MobileRobotPP()
     controller.init_coppelia()
-
-    # run robot step
-    while True:
-        controller.run_step()
+    controller.run_step()

@@ -100,7 +100,7 @@ class HokuyoLidar:
             self.init_coppelia
             self.sensing()
             self.sim.step()
-        self.sim.stopSImulation()
+        self.sim.stopSimulation()
 
 # # Simulation setup
 # def sysCall_init():
