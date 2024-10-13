@@ -26,6 +26,7 @@
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 import math
 import numpy as np
+import time
 
 class MobileRobotPP:
     def __init__(self):
@@ -36,13 +37,13 @@ class MobileRobotPP:
         self.not_first_here = False
 
     def init_coppelia(self):
-        self.robotHandle = self.sim.getObject(self.sim.handle_self)
-        self.refHandle = self.sim.getObject('dr12_ref')
-        self.frontRefHandle = self.sim.getObject('dr12_frontRef')
-        self.leftMotorHandle = self.sim.getObject('dr12_leftJoint')
-        self.rightMotorHandle = self.sim.getObject('dr12_rightJoint')
-        self.collVolumeHandle = self.sim.getObject('dr12_coll')     # dr12 의 boundary box
-        self.goalDummyHandle = self.sim.getObject('dr12_goalDummy')
+        self.robotHandle = self.sim.getObject('/dr12')
+        self.refHandle = self.sim.getObject('/dr12_ref')
+        self.frontRefHandle = self.sim.getObject('/dr12_frontRef')
+        self.leftMotorHandle = self.sim.getObject('/dr12_leftJoint')
+        self.rightMotorHandle = self.sim.getObject('/dr12_rightJoint')
+        self.collVolumeHandle = self.sim.getObject('/dr12_coll')     # dr12 의 boundary box
+        self.goalDummyHandle = self.sim.getObject('/dr12_goalDummy')
 
         self.robotObstaclesCollection = self.sim.createCollection(0)        # 충돌 검사용 객체 컬렉션
         self.sim.addItemToCollection(self.robotObstaclesCollection, self.sim.handle_all, -1, 0)
@@ -50,183 +51,135 @@ class MobileRobotPP:
         self.collPairs = [self.collVolumeHandle, self.robotObstaclesCollection]
 
         self.velocity = 180 * math.pi / 180     # 바퀴 회전 속도
-        self.searchRange = 5
-        self.searchAlgo = self.simOMPL.Algorithm.BiTRRT
-        self.displayCollisionFreeNodes = True
-        self.showRealTarget = True
-
-        # 
-        corout = coroutine.create(self.coroutine_main())
+        self.search_range = 5
+        self.search_algo = self.simOMPL.Algorithm.BiTRRT
+        self.search_duration = 0.1
+        self.display_collision_free_nodes = True
+        self.show_real_target = True
+        self.show_track_pos = True
+        self.line_container = None
 
 
     def check_collides_at(self, pos):
         tmp = self.sim.getObjectPosition(self.collVolumeHandle, -1)
         self.sim.setObjectPosition(self.collVolumeHandle, -1, pos)
-        r = self.sim.checkCollision(self.collPairs[0], self.collPairs[1])
+        collision = self.sim.checkCollision(self.collPairs[0], self.collPairs[1])
         self.sim.setObjectPosition(self.collVolumeHandle, -1, tmp)
-        return r > 0
-
-
-    def visualize_collision_free_nodes(self, states):
-        if ptCont:
-            self.sim.addDrawingObjectItem(ptCont, None)
-        else:
-            ptCont = self.sim.addDrawingObject(self.sim.drawing_spherepoints, 0.05, 0, -1, 0, [0, 1, 0])
-        if states:
-            for i in range(len(states) // 2):
-                self.sim.addDrawingObjectItem(ptCont, [states[2 * i], states[2 * i + 1], 0.025])
+        return collision
 
 
     def get_target_position(self):
-        p = np.array(self.sim.getObjectPosition(self.goalDummyHandle, -1))
-        t = self.sim.getSystemTimeInMs(-1)
-
-        if self.prevTargetPosStable is None:
-            self.prevTargetPosStable = p
-            self.prevTargetPos = p
-            self.prevTimeDiff = t
-
-        if np.linalg.norm(self.prevTargetPos - p) > 0.01:
-            self.prevTimeDiff = t
-
-        self.prevTargetPos = p
-        if self.sim.getSystemTimeInMs(self.prevTimeDiff) > 250:
-            self.prevTargetPosStable = p
-
-        return self.prevTargetPosStable
-
-
+        """Returns the position of the goal dummy object."""
+        return self.sim.getObjectPosition(self.goalDummyHandle, -1)
+    
+    
     def visualize_path(self, path):
-        if not _lineContainer:
-            _lineContainer = self.sim.addDrawingObject(self.sim.drawing_lines, 3, 0, -1, 99999, [0.2, 0.2, 0.2])
-        self.sim.addDrawingObjectItem(_lineContainer, None)
+        """Visualizes the robot's path."""
+        if not self.line_container:     # 초기
+            self.line_container = self.sim.addDrawingObject(self.sim.drawing_lines, 3, 0, -1, 99999, [0.2, 0.2, 0.2])
+
+        self.sim.addDrawingObject(self.line_container, None)
+
         if path:
-            for i in range(len(path) // 2 - 1):
-                lineDat = [path[i * 2], path[i * 2 + 1], 0.001, path[(i + 1) * 2], path[(i + 1) * 2 + 1], 0.001]
-                self.sim.ddDrawingObjectItem(_lineContainer, lineDat)
+            for i in range(1, len(path)/2):
+                line_data = [path[2*i], path[2*i+1], 0.001, path[2*i-2], path[2*i-1], 0.001]
+                self.sim.addDrawingObjectItem(self.line_container, line_data)
 
 
-    def coroutine_main(self):
-        # global velocity, searchRange, searchDuration, searchAlgo, collPairs, refHandle, goalDummyHandle, collVolumeHandle, frontRefHandle
-        self.sim.setThreadAutomaticSwitch(False)
-        i = 0
+    def move_robot_to_position(self, target_position):
+        path = None
+        while not path:
+            task = self.simOMPL.createTask('t') 
+            self.simOMPL.setAlgorithm(task, self.search_algo)
 
-        while True:
-            i += 1
-            while self.check_collides_at(self.sim.getObjectPosition(self.refHandle, -1)):
-                sp = np.array(self.sim.getObjectPosition(self.refHandle, -1))
-                gp = np.array(self.get_target_position())
-                dx = (gp - sp) / np.linalg.norm(gp - sp)
-                l = np.linalg.norm(gp - sp)
+            start_pos = self.sim.getObjectPosition(self.refHandle, -1)
+            ss = [self.simOMPL.createStateSpace('2d', self.simOMPL.StateSpaceType.position2d, self.collVolumeHandle,
+                                                [start_pos[0]-self.search_range, start_pos[1]-self.search_range],
+                                                [start_pos[0]+self.search_range, start_pos[1]+self.search_range], 1)]
+            self.simOMPL.setStateSpace(task, ss)
+            self.simOMPL.setCollisionPairs(task, self.collPairs)
+            self.simOMPL.setStartState(task, start_pos[:2])
+            self.simOMPL.setGoalState(task, target_position[:2])
+            self.simOMPL.setStateValidityCheckingResolution(task, 0.001)
+            self.simOMPL.setup(task)
 
-                if l > 0.1:
-                    sp = sp + dx * self.sim.getSimulationTimeStep() * self.velocity
-                    self.sim.setObjectPosition(self.BillHandle, -1, sp)
-                    self.sim.setObjectOrientation(self.BillHandle, -1, [0, 0, math.atan2(dx[1], dx[0])])
-                self.sim.switchThread()
+            if self.simOMPL.solve(task, self.search_duration):
+                self.simOMPL.simplifyPath(task, self.search_duration)
+                path = self.simOMPL.getPath(task)
+                self.visualize_path(path)
 
-            sp = np.array(self.sim.getObjectPosition(self.refHandle, -1))
-            gp = np.array(self.get_target_position())
-            ogp = np.array(self.get_target_position())
-            l = np.linalg.norm(gp - sp)
-            ngo = False
+            time.sleep(0.01)
+        return path
+    
+    
+    def follow_path(self, path):
+        if path:
+            path_3d = []
+            for i in range(0, len(path)/2):
+                path_3d.extend([path[2*i], path[2*i+1], 0.0])
 
-            while l > 0.1 and (l > self.searchRange or self.check_collides_at(gp)):
-                dx = (sp - gp) / np.linalg.norm(sp - gp)
-                l = np.linalg.norm(gp - sp)
-                gp = gp + dx * 0.09
-                if self.showRealTarget:
-                    ngo = True
+            prev_l = 0
+            track_pos_container = self.sim.addDrawingObject(self.sim.drawing_spherepoints | self.sim.drawing_cyclic, 0.02, 0, -1, 1, [1, 0, 1])
+            while True:
+                current_pos = self.sim.getObjectPosition(self.frontRefHandle, -1)
+                path_lengths, total_dist = self.sim.getPathLenghts(path_3d, 3)
+                closet_l = self.sim.getClosetPosOnPath(path_3d, path_lengths, current_pos)
+                
+                if closet_l <= prev_l:
+                    closet_l += total_dist / 200
+                prev_l = closet_l
 
-            if ngo:
-                ngo = self.sim.copyPasteObjects([self.goalDummyHandle], 1)[0]
-                s = self.sim.getObjectsInTree(ngo, self.sim.object_shape_type)
-                for obj in s:
-                    self.sim.setShapeColor(obj, None, self.sim.colorcomponent_ambient_diffuse, [1, 0, 0])
-                self.sim.setObjectPosition(ngo, -1, gp)
+                target_point = self.sim.getPathInterpolatedConfig(path_3d, path_lengths, closet_l)
+                self.sim.addDrawingObjectItem(track_pos_container, target_point)
 
-            if l > 0.1 and not self.check_collides_at(gp):
-                t = self.simOMPL.createTask('t')
-                self.simOMPL.setAlgorithm(t, self.searchAlgo)
-                ss = [self.simOMPL.createStateSpace('2d', self.simOMPL.StateSpaceType.position2d, self.collVolumeHandle,
-                                            [sp[0] - self.searchRange, sp[1] - self.searchRange],
-                                            [sp[0] + self.searchRange, sp[1] + self.searchRange], 1)]
-                self.simOMPL.setStateSpace(t, ss)
-                self.simOMPL.setCollisionPairs(t, self.collPairs)
-                self.simOMPL.setStartState(t, [sp[0], sp[1]])
-                self.simOMPL.setGoalState(t, [gp[0], gp[1]])
-                self.simOMPL.setStateValidityCheckingResolution(t, 0.001)
-                self.simOMPL.setup(t)
+                # Relative position of the target position
+                m = self.sim.getObjectMatrix(self.refHandle, -1)
+                self.sim.inverseMatrix(m)
+                relative_target = self.sim.multiplyVector(m, target_point)
 
-                path = None
-                while path is None:
-                    if self.simOMPL.solve(t, searchDuration):
-                        self.sim.switchThread()
-                        self.simOMPL.simplifyPath(t, searchDuration)
-                        self.sim.switchThread()
-                        path = self.simOMPL.getPath(t)
-                        self.visualize_path(path)
+                # Compute angle
+                angle = math.atan2(relative_target[1], relative_target[0])
 
-                    if self.displayCollisionFreeNodes:
-                        states = self.simOMPL.getPlannerData(t)
-                        self.visualize_collision_free_nodes(states)
-                    self.sim.switchThread()
+                # Adjust wheel velocities
+                left_v = 1.0 - 4 * angle / math.pi if angle > 0 else 1.0
+                right_v = 1.0 + 4 * angle / math.pi if angle <= 0 else 1.0
+                left_v = max(-1.0, left_v)
+                right_v = max(-1.0, right_v)
 
-                    gp2 = np.array(self.get_target_position())
-                    l = np.linalg.norm(gp2 - ogp)
-                    if l > 0.1:
-                        break
+                self.sim.setJointTargetVelocity(self.leftMotorHandle, left_v * self.velocity)
+                self.sim.setJointTargetVelocity(self.rightMotorHandle, right_v * self.velocity)
 
-                if path:
-                    path = [val for sublist in path for val in sublist] + [0.0]
-                    prevL = 0
+                # Break when close to the target
+                if np.linalg.norm(np.array(self.sim.getObjectPosition(self.goalDummyHandle, -1)) - 
+                                  np.array(self.sim.getObjectPosition(self.refHandle, -1))) < 0.05:
+                    break
 
-                    while True:
-                        pathLengths, totalDist = self.sim.getPathLengths(path, 3)
-                        l = self.sim.getClosestPosOnPath(path, pathLengths, self.sim.getObjectPosition(self.frontRefHandle, -1))
-                        if l <= prevL:
-                            l += totalDist / 200
-                        prevL = l
-
-                        p = self.sim.getPathInterpolatedConfig(path, pathLengths, l)
-                        if trackPosCont:
-                            self.sim.addDrawingObjectItem(trackPosCont, p)
-
-                        m = self.sim.getObjectMatrix(self.refHandle, -1)
-                        self.sim.invertMatrix(m)
-                        p = self.sim.multiplyVector(m, p)
-
-                        angle = math.atan2(p[1], p[0])
-
-                        leftV, rightV = 1.0, 1.0
-                        if angle > 0.0:
-                            leftV = max(1 - 4 * angle / math.pi, -1)
-                        else:
-                            rightV = max(1 + 4 * angle / math.pi, -1)
-
-                        self.sim.setJointTargetVelocity(self.leftMotorHandle, leftV * self.velocity)
-                        self.sim.setJointTargetVelocity(self.rightMotorHandle, rightV * self.velocity)
-                        self.sim.switchThread()
-
-                        gp2 = np.array(self.get_target_position())
-                        l = np.linalg.norm(gp2 - ogp)
-                        if l > 0.1:
-                            break
-
-                        pp = np.array(self.sim.getObjectPosition(self.refHandle, -1))
-                        l = np.linalg.norm(gp2 - pp)
-                        if l < 0.05:
-                            break
-
-                    if trackPosCont:
-                        self.sim.removeDrawingObject(trackPosCont)
-
-            if ngo:
-                self.sim.removeModel(ngo)
-            self.sim.switchThread()
-
-    def sysCall_actuation():
-        if not corout.done():
-            corout.run()
+                time.sleep(0.01)
 
 
+    def run_step(self):
+        goal_position = self.get_target_position()
+
+        # Adjust goal if collision is detected:
+        while self.check_collides_at(goal_position):
+            goal_position[0] -= 0.09
+
+        # Plan and follow the path
+        path = self.move_robot_to_position(goal_position)
+        if path:
+            self.follow_path(path)
+
+        # Stop
+        self.sim.setJointTargetVelocity(self.leftMotorHandle, 0.0)
+        self.sim.setJointTargetVelocity(self.rightMotorHandle, 0.0)
+
+        time.sleep(0.01)
+
+
+if __name__ == "__main__":
+    controller = MobileRobotPP()
+    controller.init_coppelia()
+
+    # run robot step
+    while True:
+        controller.run_step()
