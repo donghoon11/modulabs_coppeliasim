@@ -2,14 +2,11 @@ from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 import math
 import numpy as np
 import time
-# from youBot_controll import MecanumWheelController
-
 
 class MobileRobotPP:
     def __init__(self):
         self.client = RemoteAPIClient()
         self.sim = self.client.require('sim')
-
         self.simOMPL = self.client.require('simOMPL')
         self.run_flag = True
         self.not_first_here = False
@@ -19,26 +16,24 @@ class MobileRobotPP:
         self.refHandle = self.sim.getObject('/youBot_ref')
         self.frontRefHandle = self.sim.getObject('/youBot_frontRef')
 
-        # KUKA youBot 은 4 mecanum wheel 기반으로 differential drive 기반의 로봇과는 차이가 있다.
-        # self.leftMotorHandle = self.sim.getObject('/rollingJoint_fl')
-        # self.rightMotorHandle = self.sim.getObject('/rollingJoint_fr')
+        # KUKA youBot is a 4 mecanum wheel robot
         self.wheel_joints = [
-            self.sim.getObject('/rollingJoint_fl'),     # wheel_joints[0]
-            self.sim.getObject('/rollingJoint_rl'),     # wheel_joints[1]
-            self.sim.getObject('/rollingJoint_rr'),     # wheel_joints[2]
-            self.sim.getObject('/rollingJoint_fr')      # wheel_joints[3]
+            self.sim.getObject('/rollingJoint_fl'),  # Front left
+            self.sim.getObject('/rollingJoint_rl'),  # Rear left
+            self.sim.getObject('/rollingJoint_rr'),  # Rear right
+            self.sim.getObject('/rollingJoint_fr')   # Front right
         ]
 
-        self.collVolumeHandle = self.sim.getObject('/youBot_coll')     # dr12 의 boundary box
+        self.collVolumeHandle = self.sim.getObject('/youBot_coll')  # Collision volume
         self.goalDummyHandle = self.sim.getObject('/youBot_goalDummy')
 
-        self.robotObstaclesCollection = self.sim.createCollection(0)        # 충돌 검사용 객체 컬렉션
+        self.robotObstaclesCollection = self.sim.createCollection(0)
         self.sim.addItemToCollection(self.robotObstaclesCollection, self.sim.handle_all, -1, 0)
         self.sim.addItemToCollection(self.robotObstaclesCollection, self.sim.handle_tree, self.robotHandle, 1)
         self.collPairs = [self.collVolumeHandle, self.robotObstaclesCollection]
 
         self.velocity = 180 * math.pi / 180
-        self.search_range = 5
+        self.search_range = 1
         self.search_algo = self.simOMPL.Algorithm.BiTRRT
         self.search_duration = 0.1
         self.display_collision_free_nodes = True
@@ -46,6 +41,24 @@ class MobileRobotPP:
         self.show_track_pos = True
         self.line_container = None
 
+    def set_movement(self, v_forward, v_turn, v_side):
+        """
+        Control the mecanum wheels, supporting lateral movement.
+        :param v_forward: Forward/Backward velocity
+        :param v_turn: Rotational velocity
+        :param v_side: Lateral velocity (for side movement)
+        """
+        # Calculate wheel velocities for mecanum drive
+        left_front_wheel_speed = v_forward - v_turn + v_side
+        left_rear_wheel_speed = v_forward - v_turn - v_side
+        right_front_wheel_speed = v_forward + v_turn - v_side
+        right_rear_wheel_speed = v_forward + v_turn + v_side
+
+        # Set wheel velocities
+        self.sim.setJointTargetVelocity(self.wheel_joints[0], left_front_wheel_speed)
+        self.sim.setJointTargetVelocity(self.wheel_joints[1], left_rear_wheel_speed)
+        self.sim.setJointTargetVelocity(self.wheel_joints[2], right_rear_wheel_speed)
+        self.sim.setJointTargetVelocity(self.wheel_joints[3], right_front_wheel_speed)
 
     def check_collides_at(self, pos):
         tmp = self.sim.getObjectPosition(self.collVolumeHandle, -1)
@@ -54,35 +67,32 @@ class MobileRobotPP:
         self.sim.setObjectPosition(self.collVolumeHandle, -1, tmp)
         return True if collision[0] > 0 else False
 
-
     def get_target_position(self):
         """Returns the position of the goal dummy object."""
         return self.sim.getObjectPosition(self.goalDummyHandle, -1)
-    
-    
+
     def visualize_path(self, path):
         """Visualizes the robot's path."""
-        if not self.line_container:     # 초기
+        if not self.line_container:  # Initial
             self.line_container = self.sim.addDrawingObject(self.sim.drawing_lines, 3, 0, -1, 99999, [0.2, 0.2, 0.2])
 
         self.sim.addDrawingObject(self.line_container, None)
 
         if path:
-            for i in range(1, len(path)//2):
+            for i in range(1, len(path) // 2):
                 line_data = [path[2*i], path[2*i+1], 0.001, path[2*i-2], path[2*i-1], 0.001]
                 self.sim.addDrawingObjectItem(self.line_container, line_data)
-
 
     def move_robot_to_position(self, target_position):
         path = None
         while not path:
-            task = self.simOMPL.createTask('t') 
+            task = self.simOMPL.createTask('t')
             self.simOMPL.setAlgorithm(task, self.search_algo)
 
             start_pos = self.sim.getObjectPosition(self.refHandle, -1)
             ss = [self.simOMPL.createStateSpace('2d', self.simOMPL.StateSpaceType.position2d, self.collVolumeHandle,
-                                                [start_pos[0]-self.search_range, start_pos[1]-self.search_range],
-                                                [start_pos[0]+self.search_range, start_pos[1]+self.search_range], 1)]
+                                                [start_pos[0] - self.search_range, start_pos[1] - self.search_range],
+                                                [start_pos[0] + self.search_range, start_pos[1] + self.search_range], 1)]
             self.simOMPL.setStateSpace(task, ss)
             self.simOMPL.setCollisionPairs(task, self.collPairs)
             self.simOMPL.setStartState(task, start_pos[:2])
@@ -97,34 +107,20 @@ class MobileRobotPP:
 
             time.sleep(0.01)
         return path
-    
-
-    def set_movement(self, v_forward, v_turn, v_side):
-        fl_speed = v_forward - v_turn + v_side
-        rl_speed = v_forward - v_turn - v_side
-        fr_speed = v_forward + v_turn - v_side
-        rr_speed = v_forward + v_turn + v_side
-
-        # Set wheel velocities
-        self.sim.setJointTargetVelocity(self.wheel_joints[0], fl_speed)
-        self.sim.setJointTargetVelocity(self.wheel_joints[1], rl_speed)
-        self.sim.setJointTargetVelocity(self.wheel_joints[2], fr_speed)
-        self.sim.setJointTargetVelocity(self.wheel_joints[3], rr_speed)
-
 
     def follow_path(self, path):
         if path:
             path_3d = []
-            for i in range(0, len(path)//2):
+            for i in range(0, len(path) // 2):
                 path_3d.extend([path[2*i], path[2*i+1], 0.0])
 
             prev_l = 0
             track_pos_container = self.sim.addDrawingObject(self.sim.drawing_spherepoints | self.sim.drawing_cyclic, 0.02, 0, -1, 1, [1, 0, 1])
             while True:
                 current_pos = self.sim.getObjectPosition(self.frontRefHandle, -1)
-                path_lengths, total_dist = self.sim.getPathLenghts(path_3d, 3)
-                closet_l = self.sim.getClosetPosOnPath(path_3d, path_lengths, current_pos)
-                
+                path_lengths, total_dist = self.sim.getPathLengths(path_3d, 3)
+                closet_l = self.sim.getClosestPosOnPath(path_3d, path_lengths, current_pos)
+
                 if closet_l <= prev_l:
                     closet_l += total_dist / 200
                 prev_l = closet_l
@@ -134,60 +130,48 @@ class MobileRobotPP:
 
                 # Relative position of the target position
                 m = self.sim.getObjectMatrix(self.refHandle, -1)
-                self.sim.inverseMatrix(m)
+                self.sim.invertMatrix(m)
                 relative_target = self.sim.multiplyVector(m, target_point)
 
-                # Compute angle
+                # Compute angle for rotation
                 angle = math.atan2(relative_target[1], relative_target[0])
 
-                # # Adjust wheel velocities
-                # left_v = 1.0 - 4 * angle / math.pi if angle > 0 else 1.0
-                # right_v = 1.0 + 4 * angle / math.pi if angle <= 0 else 1.0
-                # left_v = max(-1.0, left_v)
-                # right_v = max(-1.0, right_v)
-                # self.sim.setJointTargetVelocity(self.leftMotorHandle, left_v * self.velocity)
-                # self.sim.setJointTargetVelocity(self.rightMotorHandle, right_v * self.velocity)
-
-                # Forward/backward, rotation and side movement 
+                # Forward/backward and
+                #  rotation movement
                 forward_velocity = 1.0
                 turn_velocity = 4 * angle / math.pi
+
+                # Set lateral velocity (for side movement) to 0 for now
                 side_velocity = 0.0
+
                 self.set_movement(forward_velocity, turn_velocity, side_velocity)
 
-                # Break when close to the target
-                if np.linalg.norm(np.array(self.sim.getObjectPosition(self.goalDummyHandle, -1)) - 
+                # Stop when close to the target
+                if np.linalg.norm(np.array(self.sim.getObjectPosition(self.goalDummyHandle, -1)) -
                                   np.array(self.sim.getObjectPosition(self.refHandle, -1))) < 0.05:
                     break
 
                 time.sleep(0.01)
 
-
     def run_step(self):
-        # self.sim.setStepping(True)
         self.sim.startSimulation()
         while self.run_flag:
             goal_position = self.get_target_position()
 
-            # Adjust goal if collision is detected:
+            # Adjust goal if collision is detected
             while self.check_collides_at(goal_position):
-                print('1')
                 goal_position[0] -= 0.09
 
             # Plan and follow the path
-            print('2')
             path = self.move_robot_to_position(goal_position)
-            print('3')
             if path:
                 self.follow_path(path)
 
-            # Stop
-            # self.sim.setJointTargetVelocity(self.leftMotorHandle, 0.0)
-            # self.sim.setJointTargetVelocity(self.rightMotorHandle, 0.0)
+            # Stop movement
             self.set_movement(0, 0, 0)
 
             time.sleep(0.01)
         self.sim.stopSimulation()
-
 
 if __name__ == "__main__":
     controller = MobileRobotPP()
