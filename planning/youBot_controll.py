@@ -20,7 +20,7 @@ class MecanumWheelController:
             self.sim.getObject('/rollingJoint_fr')      # wheel_joints[3]
         ]
 
-    def set_movement(self, forw_back_vel, left_right_vel, rot_vel):
+    def set_movement(self, v_forward, v_side, v_turn):
         """
         Control the mecanum wheels with forward/backward, left/right, and rotation velocities.
         
@@ -31,10 +31,30 @@ class MecanumWheelController:
         # Apply the desired wheel velocities to the mecanum wheels
         # 로봇 팔이 있는 방향을 앞이라고 한다면, 앞을 향하려면 모든 바퀴가 CW 로 회전해야함.
         # 따라서 joint 방향에 (-) 를 해줘야함.
-        self.sim.setJointTargetVelocity(self.wheel_joints[0], -forw_back_vel - left_right_vel - rot_vel)
-        self.sim.setJointTargetVelocity(self.wheel_joints[1], -forw_back_vel + left_right_vel - rot_vel)
-        self.sim.setJointTargetVelocity(self.wheel_joints[2], -forw_back_vel - left_right_vel + rot_vel)
-        self.sim.setJointTargetVelocity(self.wheel_joints[3], -forw_back_vel + left_right_vel + rot_vel)
+
+        # 파라미터 설정
+        radius = 0.05  # 휠 반지름
+        distance_x = 0.228  # 로봇 중심에서 휠까지의 x 방향 거리
+        distance_y = 0.158  # 로봇 중심에서 휠까지의 y 방향 거리
+        dist_R = distance_x + distance_y
+
+        theta_fr = 55   # deg
+        theta_fl = 125  # deg
+        theta_rl = 235  # deg
+        theta_rr = 305  # deg
+
+        fl_speed = (- v_forward - v_turn * dist_R - v_side) / radius
+        rl_speed = (- v_forward - v_turn * dist_R + v_side) / radius
+        rr_speed = (- v_forward + v_turn * dist_R - v_side) / radius
+        fr_speed = (- v_forward + v_turn * dist_R + v_side) / radius
+
+
+
+
+        self.sim.setJointTargetVelocity(self.wheel_joints[0], fl_speed)
+        self.sim.setJointTargetVelocity(self.wheel_joints[1], rl_speed)
+        self.sim.setJointTargetVelocity(self.wheel_joints[2], rr_speed)
+        self.sim.setJointTargetVelocity(self.wheel_joints[3], fr_speed)
 
     def move_forward(self, speed, duration):
         """
@@ -102,11 +122,11 @@ class MecanumWheelController:
         self.sim.startSimulation()
         while self.run_flag:
             # Example movements
-            self.move_forward(1.0, 3)     # Move forward at speed 1.0 for 3 seconds
-            # self.strafe_left(0.5, 2)      # Strafe left at speed 0.5 for 2 seconds
-            # self.rotate(1.0, 2)           # Rotate at speed 1.0 for 2 seconds
-            # self.move_backward(1.0, 3)    # Move backward at speed 1.0 for 3 seconds
-            # self.strafe_right(0.5, 2)     # Strafe right at speed 0.5 for 2 seconds
+            self.move_forward(0.5, 1)     # Move forward at speed 1.0 for 3 seconds
+            self.strafe_left(0.5, 1)      # Strafe left at speed 0.5 for 2 seconds
+            self.rotate(1.0, 1)           # Rotate at speed 1.0 for 2 seconds
+            self.move_backward(1.0, 1)    # Move backward at speed 1.0 for 3 seconds
+            self.strafe_right(0.5, 1)     # Strafe right at speed 0.5 for 2 seconds
         self.sim.stopSimulation()
 
 

@@ -60,6 +60,18 @@ class MobileRobotPP:
         theta_rl = 235  # deg
         theta_rr = 305  # deg
 
+        """
+        youBot.py
+        fl : -vel_X + vel_Z,
+        rl : -vel_X + vel_Z,
+        fr : -vel_X - vel_Z,
+        rr : -vel_X - vel_Z
+        
+        
+        
+        """
+
+
 
         # Calculate wheel velocities for mecanum drive
         fl_speed = (- v_forward - v_turn * dist_R - v_side) / radius
