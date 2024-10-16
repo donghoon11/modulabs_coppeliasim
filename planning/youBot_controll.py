@@ -19,6 +19,8 @@ class MecanumWheelController:
             self.sim.getObject('/rollingJoint_rr'),     # wheel_joints[2]
             self.sim.getObject('/rollingJoint_fr')      # wheel_joints[3]
         ]
+        self.youBot_ref = self.sim.getObject('/youBot_ref')
+
 
     def set_movement(self, v_forward, v_side, v_turn):
         """
@@ -38,18 +40,37 @@ class MecanumWheelController:
         distance_y = 0.158  # 로봇 중심에서 휠까지의 y 방향 거리
         dist_R = distance_x + distance_y
 
-        theta_fr = 55   # deg
-        theta_fl = 125  # deg
-        theta_rl = 235  # deg
-        theta_rr = 305  # deg
+        alpha_fr = 55 * math.pi / 180   # deg
+        alpha_fl = 125 * math.pi / 180  # 
+        alpha_rl = 235 * math.pi / 180  # deg
+        alpha_rr = 305 * math.pi / 180  # deg
 
-        fl_speed = (- v_forward - v_turn * dist_R - v_side) / radius
-        rl_speed = (- v_forward - v_turn * dist_R + v_side) / radius
-        rr_speed = (- v_forward + v_turn * dist_R - v_side) / radius
-        fr_speed = (- v_forward + v_turn * dist_R + v_side) / radius
+        # x_dot = v_side
+        # y_dot = -v_forward
+        # theta_dot = v_turn
+        # x, y = self.sim.getObjectPosition(self.youBot_ref)[:2]
+
+        # eulerAngles: Euler angles [alpha beta gamma]
+        theta = self.sim.getObjectOrientation(self.youBot_ref)[2]
+        theta = theta * math.pi / 180
+        print(f'theta : {theta}')
+        # 각도 예외처리 해줘야함.
+        sin_theta_fr = np.sin(theta + alpha_fr)
+        sin_theta_fl = np.sin(theta + alpha_fl)
+        sin_theta_rl = np.sin(theta + alpha_rl)
+        sin_theta_rr = np.sin(theta + alpha_rr)
+
+        cos_theta = np.cos(theta)
+        cos_theta_fr = np.cos(theta + alpha_fr) * cos_theta
+        cos_theta_fl = np.cos(theta + alpha_fl) * cos_theta
+        cos_theta_rl = np.cos(theta + alpha_rl) * cos_theta
+        cos_theta_rr = np.cos(theta + alpha_rr) * cos_theta
 
 
-
+        fl_speed = (- v_forward * cos_theta_fl - v_turn * dist_R - v_side * sin_theta_fl) / radius
+        rl_speed = (- v_forward * cos_theta_rl - v_turn * dist_R + v_side * sin_theta_rl) / radius
+        rr_speed = (- v_forward * cos_theta_rr + v_turn * dist_R - v_side * sin_theta_rr) / radius
+        fr_speed = (- v_forward * cos_theta_fr + v_turn * dist_R + v_side * sin_theta_fr) / radius
 
         self.sim.setJointTargetVelocity(self.wheel_joints[0], fl_speed)
         self.sim.setJointTargetVelocity(self.wheel_joints[1], rl_speed)
@@ -122,7 +143,7 @@ class MecanumWheelController:
         self.sim.startSimulation()
         while self.run_flag:
             # Example movements
-            self.move_forward(0.5, 1)     # Move forward at speed 1.0 for 3 seconds
+            self.move_forward(0.5, 2)     # Move forward at speed 1.0 for 3 seconds
             self.strafe_left(0.5, 1)      # Strafe left at speed 0.5 for 2 seconds
             self.rotate(1.0, 1)           # Rotate at speed 1.0 for 2 seconds
             self.move_backward(1.0, 1)    # Move backward at speed 1.0 for 3 seconds

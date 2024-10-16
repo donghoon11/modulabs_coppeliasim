@@ -146,7 +146,7 @@ class MobileRobotPP:
 
                 # Forward/backward and
                 #  rotation movement
-                forward_velocity = 2.0
+                forward_velocity = 4.0
                 turn_velocity = 4 * angle / math.pi
 
                 # Set lateral velocity (for side movement) to 0 for now
@@ -162,6 +162,7 @@ class MobileRobotPP:
                 time.sleep(0.01)
 
     def run_step(self):
+        # self.sim.setStepping(True)
         self.sim.startSimulation()
         while self.run_flag:
             goal_position = self.get_target_position()
@@ -179,7 +180,7 @@ class MobileRobotPP:
             # Stop movement
             self.set_movement(0, 0, 0)
 
-            time.sleep(0.01)
+            time.sleep(0.001)
         self.sim.stopSimulation()
 
 if __name__ == "__main__":
