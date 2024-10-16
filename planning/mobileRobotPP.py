@@ -68,6 +68,7 @@ class MobileRobotPP:
         # 충돌 쌍을 사용하여 충돌 여부를 확인 -> return bool
         collision = self.sim.checkCollision(self.collPairs[0], self.collPairs[1])
         self.sim.setObjectPosition(self.collVolumeHandle, -1, tmp)
+        print(collision)
         return collision
 
     # 목표 더미 객체의 위치를 반환한다.
@@ -77,14 +78,15 @@ class MobileRobotPP:
     
     
     def visualize_path(self, path):
+        print('ok')
         """Visualizes the robot's path."""
-        if not self.line_container:     # 초기
+        if self.line_container == None:     # 초기
             self.line_container = self.sim.addDrawingObject(self.sim.drawing_lines, 3, 0, -1, 99999, [0.2, 0.2, 0.2])
 
-        self.sim.addDrawingObject(self.line_container, None)
+        #self.sim.addDrawingObject(self.line_container, None)
 
         if path:
-            for i in range(1, len(path)/2):
+            for i in range(1, len(path)//2):
                 # 현재 포인트와 이전 포인트를 연결하는 라인 데이터를 생성.
                 line_data = [path[2*i], path[2*i+1], 0.001, path[2*i-2], path[2*i-1], 0.001]
                 self.sim.addDrawingObjectItem(self.line_container, line_data)
@@ -133,10 +135,10 @@ class MobileRobotPP:
             track_pos_container = self.sim.addDrawingObject(self.sim.drawing_spherepoints | self.sim.drawing_cyclic, 0.02, 0, -1, 1, [1, 0, 1])
             while True:
                 current_pos = self.sim.getObjectPosition(self.frontRefHandle, -1)
-                path_lengths, total_dist = self.sim.getPathLenghts(path_3d, 3)
+                path_lengths, total_dist = self.sim.getPathLengths(path_3d, 3)
                 
                 # 현재 위치와 가장 가까운 경로의 위치를 찾는다.
-                closet_l = self.sim.getClosetPosOnPath(path_3d, path_lengths, current_pos)
+                closet_l = self.sim.getClosestPosOnPath(path_3d, path_lengths, current_pos)
                 
                 # 이전 위치보다 가까운 경우를 체크.
                 if closet_l <= prev_l:
@@ -150,7 +152,7 @@ class MobileRobotPP:
 
                 # Relative position of the target position
                 m = self.sim.getObjectMatrix(self.refHandle, -1)
-                self.sim.inverseMatrix(m)
+                self.sim.getMatrixInverse(m)
                 relative_target = self.sim.multiplyVector(m, target_point)
 
                 # Compute angle
@@ -181,13 +183,15 @@ class MobileRobotPP:
             goal_position = self.get_target_position()
 
             # Adjust goal if collision is detected:
-            while self.check_collides_at(goal_position):
+            while self.check_collides_at(goal_position) == 1:
                 goal_position[0] -= 0.09
 
             # Plan and follow the path
+            print('1')
             path = self.move_robot_to_position(goal_position)
             if path:
                 self.follow_path(path)
+                print('2')
 
             # Stop
             self.sim.setJointTargetVelocity(self.leftMotorHandle, 0.0)

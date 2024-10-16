@@ -33,7 +33,7 @@ class MobileRobotPP:
         self.collPairs = [self.collVolumeHandle, self.robotObstaclesCollection]
 
         self.velocity = 180 * math.pi / 180
-        self.search_range = 1
+        self.search_range = 5
         self.search_algo = self.simOMPL.Algorithm.BiTRRT
         self.search_duration = 0.1
         self.display_collision_free_nodes = True
@@ -49,23 +49,24 @@ class MobileRobotPP:
         :param v_side: Lateral velocity (for side movement)
         """
         # Calculate wheel velocities for mecanum drive
-        left_front_wheel_speed = v_forward - v_turn + v_side
-        left_rear_wheel_speed = v_forward - v_turn - v_side
-        right_front_wheel_speed = v_forward + v_turn - v_side
-        right_rear_wheel_speed = v_forward + v_turn + v_side
+        fl_speed = - v_forward - v_turn - v_side
+        rl_speed = - v_forward - v_turn + v_side        
+        rr_wheel_speed = - v_forward + v_turn - v_side
+        fr_wheel_speed = - v_forward + v_turn + v_side
 
         # Set wheel velocities
-        self.sim.setJointTargetVelocity(self.wheel_joints[0], left_front_wheel_speed)
-        self.sim.setJointTargetVelocity(self.wheel_joints[1], left_rear_wheel_speed)
-        self.sim.setJointTargetVelocity(self.wheel_joints[2], right_rear_wheel_speed)
-        self.sim.setJointTargetVelocity(self.wheel_joints[3], right_front_wheel_speed)
+        self.sim.setJointTargetVelocity(self.wheel_joints[0], fl_speed)
+        self.sim.setJointTargetVelocity(self.wheel_joints[1], rl_speed)
+        self.sim.setJointTargetVelocity(self.wheel_joints[2], rr_wheel_speed)
+        self.sim.setJointTargetVelocity(self.wheel_joints[3], fr_wheel_speed)
 
     def check_collides_at(self, pos):
         tmp = self.sim.getObjectPosition(self.collVolumeHandle, -1)
         self.sim.setObjectPosition(self.collVolumeHandle, -1, pos)
         collision = self.sim.checkCollision(self.collPairs[0], self.collPairs[1])
         self.sim.setObjectPosition(self.collVolumeHandle, -1, tmp)
-        return True if collision[0] > 0 else False
+        symbol = True if collision == 0 else False
+        return symbol
 
     def get_target_position(self):
         """Returns the position of the goal dummy object."""
@@ -73,10 +74,10 @@ class MobileRobotPP:
 
     def visualize_path(self, path):
         """Visualizes the robot's path."""
-        if not self.line_container:  # Initial
+        if self.line_container == None:  # Initial
             self.line_container = self.sim.addDrawingObject(self.sim.drawing_lines, 3, 0, -1, 99999, [0.2, 0.2, 0.2])
 
-        self.sim.addDrawingObject(self.line_container, None)
+        # self.sim.addDrawingObject(self.line_container, None)
 
         if path:
             for i in range(1, len(path) // 2):
@@ -90,6 +91,7 @@ class MobileRobotPP:
             self.simOMPL.setAlgorithm(task, self.search_algo)
 
             start_pos = self.sim.getObjectPosition(self.refHandle, -1)
+
             ss = [self.simOMPL.createStateSpace('2d', self.simOMPL.StateSpaceType.position2d, self.collVolumeHandle,
                                                 [start_pos[0] - self.search_range, start_pos[1] - self.search_range],
                                                 [start_pos[0] + self.search_range, start_pos[1] + self.search_range], 1)]
@@ -100,6 +102,7 @@ class MobileRobotPP:
             self.simOMPL.setStateValidityCheckingResolution(task, 0.001)
             self.simOMPL.setup(task)
 
+            # 경로 단순화 (! 여러 path 중 가장 단순한 path = 최적화 경로)
             if self.simOMPL.solve(task, self.search_duration):
                 self.simOMPL.simplifyPath(task, self.search_duration)
                 path = self.simOMPL.getPath(task)
@@ -119,18 +122,23 @@ class MobileRobotPP:
             while True:
                 current_pos = self.sim.getObjectPosition(self.frontRefHandle, -1)
                 path_lengths, total_dist = self.sim.getPathLengths(path_3d, 3)
+                
+                # 현재 위치와 가장 가까운 경로 찾기.
                 closet_l = self.sim.getClosestPosOnPath(path_3d, path_lengths, current_pos)
 
                 if closet_l <= prev_l:
                     closet_l += total_dist / 200
                 prev_l = closet_l
 
+                # 가장 가까운 위치에 대한 목표 지점 보간.
                 target_point = self.sim.getPathInterpolatedConfig(path_3d, path_lengths, closet_l)
                 self.sim.addDrawingObjectItem(track_pos_container, target_point)
 
                 # Relative position of the target position
                 m = self.sim.getObjectMatrix(self.refHandle, -1)
-                self.sim.invertMatrix(m)
+                self.sim.getMatrixInverse(m)
+
+                # 현재 위치로부터 목표 지점의 상대 위치 계산
                 relative_target = self.sim.multiplyVector(m, target_point)
 
                 # Compute angle for rotation
@@ -138,7 +146,7 @@ class MobileRobotPP:
 
                 # Forward/backward and
                 #  rotation movement
-                forward_velocity = 1.0
+                forward_velocity = 2.0
                 turn_velocity = 4 * angle / math.pi
 
                 # Set lateral velocity (for side movement) to 0 for now
@@ -163,6 +171,7 @@ class MobileRobotPP:
                 goal_position[0] -= 0.09
 
             # Plan and follow the path
+            print('1')
             path = self.move_robot_to_position(goal_position)
             if path:
                 self.follow_path(path)
