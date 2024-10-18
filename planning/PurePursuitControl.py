@@ -122,7 +122,7 @@ class MobileRobotPP:
         self.sim.setJointTargetVelocity(self.motor_fr, fr_wheel_speed)
         self.sim.setJointTargetVelocity(self.motor_rr, rr_wheel_speed)
 
-    def follow_path(self, path):
+    def follow_path(self, path, look_ahead_distance=0.5):
         if path:
             path_3d = []
             for i in range(0, len(path) // 2):
@@ -136,13 +136,15 @@ class MobileRobotPP:
                 
                 # 현재 위치와 가장 가까운 경로 찾기.
                 closet_l = self.sim.getClosestPosOnPath(path_3d, path_lengths, current_pos)
-
-                if closet_l <= prev_l:
-                    closet_l += total_dist / 200
-                prev_l = closet_l
+                look_ahead_point = closet_l + look_ahead_distance
+                if look_ahead_point > total_dist:
+                    break
+                # if closet_l <= prev_l:
+                #     closet_l += total_dist / 200
+                # prev_l = closet_l
 
                 # 가장 가까운 위치에 대한 목표 지점 보간.
-                target_point = self.sim.getPathInterpolatedConfig(path_3d, path_lengths, closet_l)
+                target_point = self.sim.getPathInterpolatedConfig(path_3d, path_lengths, look_ahead_point)
                 self.sim.addDrawingObjectItem(track_pos_container, target_point)
 
                 # Relative position of the target position

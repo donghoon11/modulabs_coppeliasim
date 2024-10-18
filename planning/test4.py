@@ -2,6 +2,7 @@ from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 import math
 import numpy as np
 import time
+from scipy.optimize import minimize
 
 class MobileRobotPP:
     def __init__(self):
@@ -36,6 +37,10 @@ class MobileRobotPP:
         self.show_real_target = True
         self.show_track_pos = True
         self.line_container = None
+
+        # MPC params
+        self.horizon = 10
+        self.dt = 0.1
 
     def check_collides_at(self, pos):
         tmp = self.sim.getObjectPosition(self.collVolumeHandle, -1)
@@ -88,24 +93,67 @@ class MobileRobotPP:
             time.sleep(0.01)
         return path
 
-    def omni_wheel_control(self, v_forward, v_side, v_turn):
+    def robot_kinematics(self, state, control):
         """
-        Control the mecanum wheels, supporting lateral movement.
-        :param v_forward: Forward/Backward velocity
-        :param v_turn: Rotational velocity
-        :param v_side: Lateral velocity (for side movement)
-        
-        theta_fr = 55 
-        theta_fl = 125
-        theta_rl = 235
-        theta_rr = 305
+        Kinematic model for the mecanum wheel robot.
+        :param state: [x, y, theta]
+        :param control: [v_forward, v_side, v_turn]
+        :return: next state [x_next, y_next, theta_next]
+        """
+        x, y, theta = state[0], state[1], state[3]
+        v_forward, v_side, v_turn = control
 
-        youBot.py
-        fl : -vel_X + vel_Z,
-        rl : -vel_X + vel_Z,
-        fr : -vel_X - vel_Z,
-        rr : -vel_X - vel_Z
+        # Update the state based on kinematics equations
+        x_next = x + v_forward * math.cos(theta) * self.dt - v_side * math.sin(theta) * self.dt
+        y_next = y + v_forward * math.sin(theta) * self.dt + v_side * math.cos(theta) * self.dt
+        theta_next = theta + v_turn * self.dt
+
+        return [x_next, y_next, theta_next]
+
+    def objective_function(self, controls, *args):
         """
+        Objective function for the MPC optimization.
+        :param controls: Flattened control inputs over the horizon
+        :param args: Additional arguments: current state, reference path
+        :return: Cost (to minimize)
+        """
+        state, ref_path = args
+        cost = 0
+        controls = np.reshape(controls, (self.horizon, 3))  # [v_forward, v_side, v_turn] per step
+        print(controls)
+
+        # Simulate the future states over the prediction horizon
+        for i in range(self.horizon):
+            control = controls[i]
+            state = self.robot_kinematics(state, control)
+            ref_state = ref_path   # type 이 바뀌어 버림.
+            # Cost is the squared error between the predicted and reference positions
+            cost += (state[0] - ref_state[0])**2 + (state[1] - ref_state[1])**2
+
+        return cost
+
+    def mpc_control(self, current_state, ref_path):
+        """
+        MPC control method to compute optimal control inputs.
+        :param current_state: [x, y, theta] Current state of the robot
+        :param ref_path: List of reference states over the horizon
+        :return: Optimal control input [v_forward, v_side, v_turn]
+        """
+        # Initial guess for the controls [v_forward, v_side, v_turn] for each time step
+        initial_controls = np.zeros((self.horizon, 3)).flatten()
+
+        # Define bounds for the controls (can be tuned based on robot limits)
+        bounds = [(-1, 1), (-1, 1), (-np.pi, np.pi)] * self.horizon
+
+        # Optimize the control inputs using an optimization solver (minimize)
+        result = minimize(self.objective_function, initial_controls, args=(current_state, ref_path),
+                          bounds=bounds, method='SLSQP')
+
+        # Extract the first control input from the optimized result
+        optimal_controls = np.reshape(result.x, (self.horizon, 3))
+        return optimal_controls[0]
+
+    def omni_wheel_control(self, v_forward, v_side, v_turn):
         # params for 4 mecanum wheel drive
         radius = 0.05       # wheel radius
         dist_R = 0.228 + 0.158      # (distance b.w. centroid & wheel cent.) = dist_x + dist_y
@@ -123,54 +171,46 @@ class MobileRobotPP:
         self.sim.setJointTargetVelocity(self.motor_rr, rr_wheel_speed)
 
     def follow_path(self, path):
-        if path:
-            path_3d = []
-            for i in range(0, len(path) // 2):
-                path_3d.extend([path[2*i], path[2*i+1], 0.0])
+        """
+        Follow the path using MPC control.
+        :param path: Path as a list of (x, y, theta) coordinates
+        """
+        current_state = self.sim.getObjectPosition(self.refHandle, -1)
+        current_state.append(self.sim.getObjectOrientation(self.refHandle, -1)[2])  # Add theta
 
-            prev_l = 0
-            track_pos_container = self.sim.addDrawingObject(self.sim.drawing_spherepoints | self.sim.drawing_cyclic, 0.02, 0, -1, 1, [1, 0, 1])
-            while True:
-                current_pos = self.sim.getObjectPosition(self.frontRefHandle, -1)
-                path_lengths, total_dist = self.sim.getPathLengths(path_3d, 3)
-                
-                # 현재 위치와 가장 가까운 경로 찾기.
-                closet_l = self.sim.getClosestPosOnPath(path_3d, path_lengths, current_pos)
+        while True:
+            # Define the reference path for the horizon
+            ref_path = self.get_reference_path(path, current_state)
 
-                if closet_l <= prev_l:
-                    closet_l += total_dist / 200
-                prev_l = closet_l
+            # Get optimal control input from MPC
+            v_forward, v_side, v_turn = self.mpc_control(current_state, ref_path)
 
-                # 가장 가까운 위치에 대한 목표 지점 보간.
-                target_point = self.sim.getPathInterpolatedConfig(path_3d, path_lengths, closet_l)
-                self.sim.addDrawingObjectItem(track_pos_container, target_point)
+            # Apply the control to the mecanum wheels
+            self.omni_wheel_control(v_forward, v_side, v_turn)
 
-                # Relative position of the target position
-                m = self.sim.getObjectMatrix(self.refHandle, -1)
-                self.sim.getMatrixInverse(m)
+            # Update current state for the next iteration
+            current_state = self.robot_kinematics(current_state, [v_forward, v_side, v_turn])
 
-                # 현재 위치로부터 목표 지점의 상대 위치 계산
-                relative_target = self.sim.multiplyVector(m, target_point)
+            # Stop if the robot reaches the goal
+            if np.linalg.norm(np.array(self.sim.getObjectPosition(self.goalDummyHandle, -1)) -
+                              np.array(self.sim.getObjectPosition(self.refHandle, -1))) < 0.05:
+                break
 
-                # Compute angle for rotation
-                angle = math.atan2(relative_target[1], relative_target[0])
+            time.sleep(0.01)
 
-                # Forward/backward and
-                #  rotation movement
-                forward_velocity = 2.0
-                turn_velocity = 4 * angle / math.pi
-
-                # Set lateral velocity (for side movement) to 0 for now
-                side_velocity = 0.0
-
-                self.omni_wheel_control(forward_velocity, side_velocity, turn_velocity)
-
-                # Stop when close to the target
-                if np.linalg.norm(np.array(self.sim.getObjectPosition(self.goalDummyHandle, -1)) -
-                                  np.array(self.sim.getObjectPosition(self.refHandle, -1))) < 0.05:
-                    break
-
-                time.sleep(0.01)
+    def get_reference_path(self, path, current_state):
+        """
+        Get the reference path for the next horizon steps.
+        :param path: Full path as (x, y, theta) coordinates
+        :param current_state: Current state of the robot
+        :return: Reference path for the horizon
+        """
+        ref_path = []
+        for i in range(self.horizon):
+            # Choose future path points (can be spaced out based on the lookahead distance)
+            index = min(i, len(path) - 1)
+            ref_path.append(path[index])
+        return ref_path
 
     def run_step(self):
         # self.sim.setStepping(True)
