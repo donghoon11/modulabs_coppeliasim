@@ -113,14 +113,20 @@ class MobileRobotPP:
         # Calculate wheel velocities for mecanum drive
         fl_speed = (-v_forward - v_side - v_turn * dist_R ) / radius
         rl_speed = (-v_forward + v_side - v_turn * dist_R ) / radius
-        fr_wheel_speed = (-v_forward + v_side + v_turn * dist_R) / radius
-        rr_wheel_speed = (-v_forward - v_side + v_turn * dist_R ) / radius
+        fr_speed = (-v_forward + v_side + v_turn * dist_R) / radius
+        rr_speed = (-v_forward - v_side + v_turn * dist_R ) / radius
+
+        print(f"fl_spped : {fl_speed}")
+        print(f"rl_spped : {rl_speed}")
+        print(f"fr_spped : {fr_speed}")
+        print(f"rr_spped : {rr_speed}")
+        print()
 
         # Set motor velocities
         self.sim.setJointTargetVelocity(self.motor_fl, fl_speed)
         self.sim.setJointTargetVelocity(self.motor_rl, rl_speed)
-        self.sim.setJointTargetVelocity(self.motor_fr, fr_wheel_speed)
-        self.sim.setJointTargetVelocity(self.motor_rr, rr_wheel_speed)
+        self.sim.setJointTargetVelocity(self.motor_fr, fr_speed)
+        self.sim.setJointTargetVelocity(self.motor_rr, rr_speed)
 
     def follow_path(self, path):
         if path:
@@ -157,7 +163,7 @@ class MobileRobotPP:
 
                 # Forward/backward and
                 #  rotation movement
-                forward_velocity = 2.0
+                forward_velocity = 8.0
                 turn_velocity = 4 * angle / math.pi
 
                 # Set lateral velocity (for side movement) to 0 for now
@@ -177,10 +183,30 @@ class MobileRobotPP:
         self.sim.startSimulation()
         while self.run_flag:
             goal_position = self.get_target_position()
-
-            # Adjust goal if collision is detected
             while self.check_collides_at(goal_position):
                 goal_position[0] -= 0.09
+
+            # collision_distance_threshold = 0.09  # 기본 이동 거리
+            # adjust_factor = 0.05  # 위치 조정 비율
+            # max_adjust_attempts = 20  # 최대 시도 횟수
+
+            # adjust_attempts = 0
+            # while self.check_collides_at(goal_position):
+            #     # 충돌이 감지되면 목표 위치를 조정함
+            #     adjust_attempts += 1
+            #     if adjust_attempts > max_adjust_attempts:
+            #         print("Collision avoidance failed. Max adjustment attempts reached.")
+            #         break
+
+            #     # 충돌 발생 시 X와 Y 좌표를 조정
+            #     delta_x = (goal_position[0] - self.sim.getObjectPosition(self.refHandle, -1)[0]) * adjust_factor
+            #     delta_y = (goal_position[1] - self.sim.getObjectPosition(self.refHandle, -1)[1]) * adjust_factor
+
+            #     # 목표 위치를 조정하는 방식, 점차적으로 목표 위치를 현재 로봇 위치로부터 이동
+            #     goal_position[0] -= delta_x if abs(delta_x) > collision_distance_threshold else collision_distance_threshold
+            #     goal_position[1] -= delta_y if abs(delta_y) > collision_distance_threshold else collision_distance_threshold
+
+            #     print(f"Collision detected, adjusting goal to: {goal_position}")
 
             # Plan and follow the path
             print('1')
