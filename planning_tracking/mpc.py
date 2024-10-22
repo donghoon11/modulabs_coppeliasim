@@ -18,6 +18,8 @@ class PP:
         self.collVolumeHandle = self.sim.getObject('/youBot_coll')
         self.goalDummyHandle = self.sim.getObject('/youBot_goalDummy')
 
+        self.objs = self.sim.getObject('/Floor')
+
         self.motor_fl = self.sim.getObject('/rollingJoint_fl')
         self.motor_rl = self.sim.getObject('/rollingJoint_rl')
         self.motor_fr = self.sim.getObject('/rollingJoint_fr')
@@ -34,7 +36,7 @@ class PP:
             bit 1 set (2): the specified object is not included in the group of objects, if sim.handle_tree or sim.handle_chain is specified (i.e. the tree base or tip is excluded).
         '''
         self.robotObstaclesCollection = self.sim.createCollection(0)
-        self.sim.addItemToCollection(self.robotObstaclesCollection, self.sim.handle_all, -1, 0)     # -1 : 마지막 object = cuboid(벽)
+        self.sim.addItemToCollection(self.robotObstaclesCollection, self.sim.handle_all, self.objs, 0)     # -1 : 마지막 object = cuboid(벽)
         self.sim.addItemToCollection(self.robotObstaclesCollection, self.sim.handle_tree, self.robotHandle, 1)
         self.collPairs = [self.collVolumeHandle, self.robotObstaclesCollection]
 
@@ -57,20 +59,20 @@ class PP:
 
         # 다시 원래위치로 옮겨오기.
         self.sim.setObjectPosition(self.collVolumeHandle, tmp, -1)
-        symbol = True if collision[0] == 0 else False
+        symbol = True if collision[0] == 1 else False
         return symbol
     
     def get_target_position(self):
         return self.sim.getObjectPosition(self.goalDummyHandle, -1)
     
-    def visualize_path(self, path:list):
+    def visualize_path(self, path):
         '''
         sim.addDrawingObject(int objectType, float size, float duplicateTolerance, 
                             int parentObjectHandle, int maxItemCount, list color = None)
         '''
         if self.line_container is None:
             self.line_container = self.sim.addDrawingObject(self.sim.drawing_lines, 3, 0, -1, 99999, [0.2,0.2,0.2])
-        # self.sim.addDrawingObjectItem(self.line_container, None)
+        self.sim.addDrawingObjectItem(self.line_container, None)
 
         if path:
             for i in range(1, len(path) // 2):
@@ -98,7 +100,7 @@ class PP:
             self.simOMPL.setCollisionPairs(task, self.collPairs)
             self.simOMPL.setStartState(task, start_pos[:2])
             self.simOMPL.setGoalState(task, target_position[:2])
-            self.simOMPL.setStateValidityCheckingResolution(task, 0.001)
+            self.simOMPL.setStateValidityCheckingResolution(task, 0.01)
             self.simOMPL.setup(task)
 
             # 경로 단순화
@@ -108,7 +110,7 @@ class PP:
                 print(f'path : {path}')
                 self.visualize_path(path)
 
-            time.sleep(0.01)
+            # time.sleep(0.01)
         return path
     
     def omni_wheel_control(self, v_forward, v_side, v_turn):
@@ -153,7 +155,7 @@ class PP:
                 prev_l = closet_l
 
                 target_point = self.sim.getPathInterpolatedConfig(path_3d, path_length, closet_l)
-                self.sim.addDrawingObjectItem(track_pos_container, target_point)
+                # self.sim.addDrawingObjectItem(track_pos_container, target_point)
 
                 m = self.sim.getObjectMatrix(self.refHandle, -1)
                 self.sim.getMatrixInverse(m)
@@ -162,14 +164,14 @@ class PP:
 
                 angle = math.atan2(relative_target[1], relative_target[0])
 
-                forward_vel = 8.0
+                forward_vel = 2.0
                 turn_vel = 4 * angle / math.pi
                 side_vel = 0.0
 
                 self.omni_wheel_control(forward_vel, side_vel, turn_vel)
 
                 if np.linalg.norm(np.array(self.sim.getObjectPosition(self.goalDummyHandle, -1)) -
-                                  np.array(self.sim.getObjectPosition(self.refHandle, -1))) < 0.05:
+                                  np.array(self.sim.getObjectPosition(self.refHandle, -1))) < 0.4:
                     break
                 
                 # time.sleep(0.01)
