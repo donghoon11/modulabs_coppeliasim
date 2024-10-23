@@ -34,7 +34,7 @@ class youBotPP:
             bit 1 set (2): the specified object is not included in the group of objects, if sim.handle_tree or sim.handle_chain is specified (i.e. the tree base or tip is excluded).
         '''
         self.robotObstaclesCollection = self.sim.createCollection(0)
-        self.sim.addItemToCollection(self.robotObstaclesCollection, self.sim.handle_all, -1, 0)     # -1 : 마지막 object = cuboid(벽)
+        self.sim.addItemToCollection(self.robotObstaclesCollection, self.sim.handle_all, -1, 0)     # "-1" means world?
         self.sim.addItemToCollection(self.robotObstaclesCollection, self.sim.handle_tree, self.robotHandle, 1)
         self.collPairs = [self.collVolumeHandle, self.robotObstaclesCollection]
 
@@ -52,12 +52,11 @@ class youBotPP:
 
         # 특정 pos 로 이동한 다음 충돌 검사.
         self.sim.setObjectPosition(self.collVolumeHandle, pos, -1)
-        collision = self.sim.checkCollision(self.collPairs[0], self.collPairs[1])
-        print(collision)        # collision[0] 결과가 0이면 충돌.
+        result, collidingObjectHandles = self.sim.checkCollision(self.collPairs[0], self.collPairs[1])
 
         # 다시 원래위치로 옮겨오기.
         self.sim.setObjectPosition(self.collVolumeHandle, tmp, -1)
-        symbol = True if collision[0] == 0 else False
+        symbol = True if result > 0 else False
         return symbol
     
     def get_target_position(self):
@@ -183,7 +182,7 @@ class youBotPP:
                 print(f'goal position : {goal_position}')
                 # 충돌 보정
                 goal_position[0] -= 0.09
-                goal_position[1] -= 0.09
+                # goal_position[1] -= 0.09
             print('2')
             path = self.move_robot_to_position(goal_position)
             print('3')
