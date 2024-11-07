@@ -1,19 +1,3 @@
-'''
-class YouBot:
-    ...
-    def read_lidars(self):
-        scan = []
-        for id in self.lidars:
-            scan.append(self.sim.readProximitySensor(id))
-        return scan
-
-    def read_camera_1(self):
-        result = self.sim.getVisionSensorImg(self.camera_1)
-        img = np.frombuffer(result[0], dtype=np.uint8)
-        img = img.reshape((result[1][1], result[1][0], 3))
-        return img
-'''
-
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -38,7 +22,7 @@ class MappingBot(YouBot):
         return x, y, theta
     
     def run_step(self, count):
-        self.control_car()
+        # self.control_car()
         
         scan = self.read_lidars()
         loc = self.read_ref()
