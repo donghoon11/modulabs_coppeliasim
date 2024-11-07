@@ -159,6 +159,7 @@ class YouBot:
         return img
 
     def run_coppelia(self):
+        self.init_coppelia()
         # key input
         Listener(on_press=self.on_press).start()
         # start simulation
@@ -175,9 +176,3 @@ class YouBot:
     @abstractmethod
     def run_step(self, count):
         pass
-
-
-if __name__ == "__main__":
-    client = YouBot()
-    client.init_coppelia()
-    client.run_coppelia()

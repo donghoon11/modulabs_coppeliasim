@@ -6,6 +6,9 @@ import time
 import matplotlib.pyplot as plt
 from youBot import YouBot
 
+import logging
+import threading
+
 class MappingBot(YouBot):
     def __init__(self):
         super().__init__()
@@ -170,11 +173,6 @@ class Grid():
         plt.gca().set_aspect("equal")
         plt.pause(0.001)
 
-# if __name__ == "__main__":
-#     client = MappingBot()
-#     client.init_coppelia()
-#     client.run_coppelia()
-
 
 class youBotPP:
     def __init__(self):
@@ -184,7 +182,7 @@ class youBotPP:
         self.run_flag = True
         self.not_first_here = False
 
-    def init_coppelia(self):
+    def init_coppelia_pp(self):
         self.robotHandle = self.sim.getObject('/youBot')
         self.refHandle = self.sim.getObject('/youBot_ref')
         self.frontRefHandle = self.sim.getObject('/youBot_frontRef')
@@ -350,6 +348,7 @@ class youBotPP:
 
     def run_coppelia_pp(self):
         # self.sim.setStepping(True)
+        self.init_coppelia_pp()
         self.sim.startSimulation(True)
         while self.run_flag:
             for i in range(len(self.waypoints)):
@@ -374,6 +373,14 @@ class youBotPP:
         self.sim.stopSimulation()
 
 if __name__ == "__main__":
-    controller = youBotPP()
-    controller.init_coppelia()
-    controller.run_coppelia()
+    planning = youBotPP()
+    mapping = MappingBot()
+
+    thread_a = threading.Thread(target=planning.run_coppelia_pp)
+    thread_b = threading.Thread(target=mapping.run_coppelia)
+
+    thread_a.start()
+    thread_b.start()
+
+    thread_a.join()
+    thread_b.join()
