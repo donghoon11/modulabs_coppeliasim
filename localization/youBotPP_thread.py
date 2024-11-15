@@ -19,15 +19,10 @@ class MappingBot(YouBot):
         # list eulerAngles = sim.getObjectOrientation(int objectHandle, 
         #                                     int relativeToObjectHandle = sim.handle_world)
         # eulerAngles: Euler angles [alpha beta gamma]
-        '''
-        - alpha = Roll
-        - beta = Pitch
-        - gamma = Yaw
-        '''
         theta = self.sim.getObjectOrientation(self.youBot_ref)[2]
         return x, y, theta
     
-    def run_step(self, count):
+    def run_step(self):
         # self.control_car()
         
         scan = self.read_lidars()
@@ -46,10 +41,10 @@ class Grid():
         self.R, self.P = np.meshgrid(r, p)  # 2D 그리드 생성
         # plot object
         self.plt_objects = [None] * 15
-        # scan theta
+        # scan theta, lidar setting 이므로 이 부분 수정하지 않아도 됨.
         self.delta = np.pi / 12     # 13개 라이다 -> 12개 간격으로 분해능.
         # -90도 기준으로 각 라이다별 스캔 각도 계산.
-        self.scan_theta = np.array([- np.pi / 2 + self.delta * i for i in range(13)])
+        self.scan_theta = np.array([- np.pi + self.delta * i for i in range(13)])
         self.boundary = np.pi / 2 + self.delta / 2      
         # min distance
         self.min_dist = (2 * (0.05**2)) ** 0.5  # 0.07071
@@ -63,16 +58,17 @@ class Grid():
         x, y, theta = loc       # youBot_ref (x,y,yaw)
         # scan position
         # 라이다 위치는 ref position (로봇 중앙) 으로부터 앞으로 0.275 m 으로 조정.
-        rx = x + 0.275 * np.cos(theta)
-        ry = y + 0.275 * np.sin(theta)
+        rx = x + 0.275 * np.cos(theta)      # ref dummy 위치 몸체 중앙으로 변동되었으므로 0.275 m 값 수정 필요.
+        ry = y + 0.275 * np.sin(theta)      # ref dummy 위치 몸체 중앙으로 변동되었으므로 0.275 m 값 수정 필요.
         # range
-        dist = 2.25     # 스캔 센서 감지 최대 거리
+        dist = 2.25     # 스캔 센서 감지 최대 거리, scan data 테스트 통해서 distance 더 길게 할 수도 있음.
         '''
         i_min, i_max, j_min, j_max는 그리드 맵에서 스캔 범위 내의 인덱스를 결정. 
         그리드의 해상도는 0.1 미터이고, 그리드 맵이 100 x 100 크기를 가지며, 맵의 중앙이 (50,50)에 해당
         '''
+        # 이 아래 부분은 sub grid search 를 하기 위해 조정한 부분.
         # xy_resolution = 0.1
-        i_min = max(0, int((rx - dist) // 0.1 + 50))
+        i_min = max(0, int((rx - dist) // 0.1 + 50))            # norm // resolution + map_center_index
         i_max = min(99, int((rx + dist) // 0.1 + 50))
         j_min = max(0, int((ry - dist) // 0.1 + 50))
         j_max = min(99, int((ry + dist) // 0.1 + 50))
@@ -97,24 +93,24 @@ class Grid():
         # 각 지점과 로봇의 스캔 세서 사이의 각도 차이를 구하고, 로봇이 바라보는 방향 theta 와 비교해 각도 차이 dtheta 를 계산.
         gtheta = np.arccos(dx / gd) * ((dy > 0) * 2 -1)     # gtheta : global coord.origin 에 대한 광선의 각도
         dtheta = gtheta - theta                             # dtheta : 로봇의 yaw 를 고려한 광선의 상대 각도. 로봇 이동 방향 기준으로 계산된 광선의 각도.
-        # 각도 범위 조정. (-pi ~ pi)
+        # 각도 범위 조정. (-pi ~ pi) 안에 존재할 수 있도록 설정. 단위 : [rad]
         while np.pi < np.max(dtheta):
             dtheta -= (np.pi < dtheta) * 2 * np.pi
         while np.min(dtheta) < -np.pi:
             dtheta += (dtheta < -np.pi) * 2 * np.pi
         
-        # inverse sensor model
+        # inverse sensor model : 역센서 모델
         '''
         Return values of 'sim.readProximitySensor'
         :   res = detection state (0 or 1)
             dist = distance to th detected point
             point = array of 3 numbers indicating the relative coord. of the detected point
             obj = handle of the object that was detected
-            n = normal vector of the detected surface relative to the snesor reference frame. 
+            n = normal vector of the detected surface relative to the sensor reference frame. / finding norm vector of the detected surface rel. to the sensor ref.frame.
         '''
         # res 는 센서가 장애물을 감지했는지 여부, dist 는 장애물과의 거리
         for i in range(13):
-            res, dist, _, _, _ = scan[i]
+            res, dist, _, _, _ = scan[i]        # 여기서 scan return 값에 대한 정의해주지 않으면 dist 에 튜플로 묶여서 값이 같이 들어가게됨.
             if res == 0:        # 장애물이 없는 경우 -> 해당 방향에서 특정 거리 내에 있는 셀들을 자유 공간으로 간주. free area
                 area = (
                     (gd <= 2.25)    # sub gird 각 셀과 로봇 센서 사이의 거리가 2.25 미터 이하인지 확인.
@@ -142,6 +138,7 @@ class Grid():
         with open("/home/oh/my_coppeliasim/modulabs_coppeliasim/localization/mapping_test.npy", "wb") as f:
             np.save(f, self.grid)
 
+    # visualizeing 부분은 matplotlib 만 다루므로 수정 하지 않아도 됨.
     def visualize(self, loc, scan):
         x, y, theta = loc
         # clear object
@@ -337,18 +334,19 @@ class youBotPP:
                     self.sim.removeDrawingObject(track_pos_container)
                     break
                 self.sim.step()
-                time.sleep(0.001)
+                # time.sleep(0.001)
 
+    # omni_wheel_control 은 모터 속도 제어를 위해 추가한 메서드.
     def omni_wheel_control(self, forwback_vel, side_vel, rot_vel):
         self.sim.setJointTargetVelocity(self.wheel_joints[0], -forwback_vel - side_vel - rot_vel)
         self.sim.setJointTargetVelocity(self.wheel_joints[1], -forwback_vel + side_vel - rot_vel)
         self.sim.setJointTargetVelocity(self.wheel_joints[2], -forwback_vel + side_vel + rot_vel)
         self.sim.setJointTargetVelocity(self.wheel_joints[3], -forwback_vel - side_vel + rot_vel)
    
-
+    # re-naming : run_coppelia -> run_coppelia_pp
     def run_coppelia_pp(self):
         # self.sim.setStepping(True)
-        self.init_coppelia_pp()
+        self.init_coppelia_pp()     # 원래 클래스 외부의 main 함수에서 호출해야 하는데 thread 를 사용하므로 클래스 내부에서 호출.
         self.sim.startSimulation(True)
         while self.run_flag:
             for i in range(len(self.waypoints)):
@@ -372,6 +370,7 @@ class youBotPP:
         print('robot reaches the goal position')
         self.sim.stopSimulation()
 
+# thread 기능 설정.
 if __name__ == "__main__":
     planning = youBotPP()
     mapping = MappingBot()

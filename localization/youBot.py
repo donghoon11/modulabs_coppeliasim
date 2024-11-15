@@ -161,18 +161,17 @@ class YouBot:
     def run_coppelia(self):
         self.init_coppelia()
         # key input
-        Listener(on_press=self.on_press).start()
+        # Listener(on_press=self.on_press).start()
         # start simulation
         self.sim.setStepping(True)
         self.sim.startSimulation()
-        count = 0
+        
         while self.run_flag:
-            count += 1
             # step
-            self.run_step(count)
+            self.run_step()
             self.sim.step()
         self.sim.stopSimulation()
 
     @abstractmethod
-    def run_step(self, count):
+    def run_step(self):
         pass

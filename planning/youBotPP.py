@@ -14,14 +14,14 @@ class youBotPP:
     def init_coppelia(self):
         self.robotHandle = self.sim.getObject('/youBot')
         self.refHandle = self.sim.getObject('/youBot_ref')
-        self.frontRefHandle = self.sim.getObject('/youBot_frontRef')
+        # self.frontRefHandle = self.sim.getObject('/youBot_frontRef')
         self.collVolumeHandle = self.sim.getObject('/youBot_coll')
-        #self.goalDummyHandle = self.sim.getObject('/goalDummy')
+        self.goalDummyHandle = self.sim.getObject('/goalDummy')
         #self.goalDummyHandle = self.sim.getObject('/balconyDummy')
-        self.waypoints = [self.sim.getObject('/room1Dummy'),
-                          self.sim.getObject('/room2Dummy'),
-                          self.sim.getObject('/entranceDummy'),
-                        ]
+        # self.waypoints = [self.sim.getObject('/room1Dummy'),
+        #                   self.sim.getObject('/room2Dummy'),
+        #                   self.sim.getObject('/entranceDummy'),
+        #                 ]
 
         self.wheel_joints = [
             self.sim.getObject('/rollingJoint_fl'),  # front left
@@ -34,11 +34,11 @@ class youBotPP:
         self.prev_side_vel = 0
         self.prev_rot_vel = 0
 
-        self.p_parm = 20
+        self.p_parm = 50 #20
         self.max_v = 10
-        self.p_parm_rot = 10
+        self.p_parm_rot = 10 #10
         self.max_v_rot = 3
-        self.accel_f = 0.35    
+        self.accel_f = 0.35
 
         '''
         sim.createCollection()
@@ -124,7 +124,7 @@ class youBotPP:
 
                 rel_p = self.sim.multiplyVector(m_inv, tartgetPoint)
                 rel_o = math.atan2(rel_p[1], rel_p[0]) - math.pi/2      # yaw 조절하는 부분.
-
+ 
                 forwback_vel = rel_p[1] * self.p_parm
                 side_vel = rel_p[0] * self.p_parm
                 v = (forwback_vel**2 + side_vel**2)**0.5
@@ -147,9 +147,10 @@ class youBotPP:
                 if abs(dr) > self.max_v_rot * self.accel_f:
                     dr = self.max_v_rot * self.accel_f * dr / abs(dr)
 
+
                 forwback_vel = self.prev_forwback_vel + df
-                side_vel = self.prev_side_vel + ds
-                rot_vel = self.prev_rot_vel + dr
+                side_vel = self.prev_side_vel + ds 
+                rot_vel = self.prev_rot_vel + dr 
 
                 self.sim.setJointTargetVelocity(self.wheel_joints[0], -forwback_vel - side_vel - rot_vel)
                 self.sim.setJointTargetVelocity(self.wheel_joints[1], -forwback_vel + side_vel - rot_vel)
@@ -166,7 +167,7 @@ class youBotPP:
                     self.sim.removeDrawingObject(track_pos_container)
                     break
                 self.sim.step()
-                time.sleep(0.001)
+                # time.sleep(0.001)
 
     def omni_wheel_control(self, forwback_vel, side_vel, rot_vel):
         self.sim.setJointTargetVelocity(self.wheel_joints[0], -forwback_vel - side_vel - rot_vel)
@@ -175,30 +176,54 @@ class youBotPP:
         self.sim.setJointTargetVelocity(self.wheel_joints[3], -forwback_vel - side_vel + rot_vel)
    
 
+    # def run_coppelia(self):
+    #     # self.sim.setStepping(True)
+    #     self.sim.startSimulation(True)
+    #     while self.run_flag:
+    #         for i in range(len(self.waypoints)):
+    #             goalPos = self.sim.getObjectPosition(self.waypoints[i], -1)
+    #             print(f'goal position : {goalPos}')
+    #             try:
+    #                 path = self.findPath(goalPos)
+    #                 print(f'Find the path : waypoint{i}')
+    #             except:
+    #                 print('Fail to find path.')
+    #             if path != None:
+    #                 self.followPath(goalDummyHandle=self.waypoints[i], path=path)
+    #             self.omni_wheel_control(0.0, 0.0, 0.0)
+    #             self.sim.removeDrawingObject(self.line_container)
+    #             self.line_container = None
+    #             print('move to another waypoint')
+    #             time.sleep(2)
+    #         print('check')
+    #         self.omni_wheel_control(0.0, 0.0, 0.0)
+    #         #break
+    #     print('robot reaches the goal position')
+    #     self.sim.stopSimulation()
+
     def run_coppelia(self):
         # self.sim.setStepping(True)
         self.sim.startSimulation(True)
         while self.run_flag:
-            for i in range(len(self.waypoints)):
-                goalPos = self.sim.getObjectPosition(self.waypoints[i], -1)
-                print(f'goal position : {goalPos}')
-                try:
-                    path = self.findPath(goalPos)
-                    print(f'Find the path : waypoint{i}')
-                except:
-                    print('Fail to find path.')
-                if path != None:
-                    self.followPath(goalDummyHandle=self.waypoints[i], path=path)
-                self.omni_wheel_control(0.0, 0.0, 0.0)
-                self.sim.removeDrawingObject(self.line_container)
-                self.line_container = None
-                print('move to another waypoint')
-                time.sleep(2)
-            print('check')
+            goalPos = self.sim.getObjectPosition(self.goalDummyHandle, -1)
+            print(f'goal position : {goalPos}')
+            try:
+                path = self.findPath(goalPos)
+                print(f'Find the path')
+            except:
+                print('Fail to find path.')
+            if path is not None:
+                print('follow track')
+                self.followPath(goalDummyHandle=self.goalDummyHandle, path=path)
+                print('ok')
             self.omni_wheel_control(0.0, 0.0, 0.0)
-            #break
+            self.sim.removeDrawingObject(self.line_container)
+            self.line_container = None
+            time.sleep(2)
+            break
         print('robot reaches the goal position')
         self.sim.stopSimulation()
+
 
 if __name__ == "__main__":
     controller = youBotPP()
