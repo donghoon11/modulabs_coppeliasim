@@ -32,8 +32,10 @@ class HokuyoLidar:
         self.sim.addItemToCollection(self.collection, self.sim.handle_tree, self.self_handle, 1)    # 로봇과 그 하위 객체들을 트리 구조로 컬렉션에 추가.
         
         # Set parameters for vision sensors
+        # 센서가 스캔할 수 있는 엔티티 설정.
         self.sim.setObjectInt32Param(self.visionSensors[0], self.sim.visionintparam_entity_to_render, self.collection)
         self.sim.setObjectInt32Param(self.visionSensors[1], self.sim.visionintparam_entity_to_render, self.collection)
+        # 센서의 최대 감지 거리 설정.
         self.sim.setObjectFloatParam(self.visionSensors[0], self.sim.visionfloatparam_far_clipping, self.maxScanDistance)
         self.sim.setObjectFloatParam(self.visionSensors[1], self.sim.visionfloatparam_far_clipping, self.maxScanDistance)
         
@@ -47,6 +49,7 @@ class HokuyoLidar:
 
     def sensing(self):
         measuredData = []
+        print(measuredData)
 
         # Clear existing lines
         self.sim.addDrawingObjectItem(self.lines, None)
@@ -54,47 +57,51 @@ class HokuyoLidar:
         # Iterate through vision sensors
         for i in range(2):
             if self.sim.readVisionSensor(self.visionSensors[i]) != -1:
-                result, detectionState, auxData = self.sim.readVisionSensor(self.visionSensors[i])
-                if detectionState:
+                result, t, auxData = self.sim.readVisionSensor(self.visionSensors[i])
+                # print(f'sensor{i}, detectionState : {detectionState}, auxData : {auxData}')
+                auxData_points = np.array(auxData).reshape(-1,5)
+                if auxData_points:
                     sensorMatrix = self.sim.getObjectMatrix(self.visionSensors[i])
                     relRefMatrix = self.sim.getObjectMatrix(self.self_handle)
-                    relRefMatrix = self.sim.getMatrixInverse(relRefMatrix)
-                    relRefMatrix = self.sim.multiplyMatrices(relRefMatrix, sensorMatrix)
+                    relRefMatrix_inv = self.sim.getMatrixInverse(relRefMatrix)
+                    relRefMatrix_new = self.sim.multiplyMatrices(relRefMatrix_inv, sensorMatrix)
 
                     # Prepare transformation data
                     p = [0, 0, 0]
-                    p = self.sim.multiplyVector(sensorMatrix, p)
-                    t = [p[0], p[1], p[2], 0, 0, 0]
+                    p_calc = self.sim.multiplyVector(sensorMatrix, p)
+                    t = [p_calc[0], p_calc[1], p_calc[2], 0, 0, 0]
 
                     # Iterate over vision sensor data
-                    for j in range(auxData[2]):
-                        for k in range(auxData[1]):
-                            index = 2 + 4 * (j * auxData[1] + k)
-                            v = [auxData[index+1], auxData[index+2], auxData[index+3], auxData[index+4]]
+                    for m in range(len(auxData_points)):
+                        for j in range(auxData[2]):
+                            for k in range(auxData[1]):
+                                index = 2 + 4 * (j * auxData[1] + k)
+                                v = [auxData[index+1], auxData[index+2], auxData[index+3], auxData[index+4]]
 
-                            # If generating data, process it
-                            if self.generateData:
-                                if self.rangeData:
-                                    measuredData.append(v[3])  # Store distance data
-                                else:
-                                    if v[3] < self.maxScanDistance * 0.9999 or not self.discardMaxDistPts:
-                                        transformed_p = self.sim.multiplyVector(relRefMatrix, v)
-                                        measuredData.append(transformed_p[0])
-                                        measuredData.append(transformed_p[1])
-                                        measuredData.append(transformed_p[2])
+                                # If generating data, process it
+                                if self.generateData:
+                                    if self.rangeData:
+                                        measuredData.append(v[3])  # Store distance data
+                                    else:
+                                        if v[3] < self.maxScanDistance * 0.9999 or not self.discardMaxDistPts:
+                                            transformed_p = self.sim.multiplyVector(relRefMatrix_new, v)
+                                            measuredData.append(transformed_p[0])
+                                            measuredData.append(transformed_p[1])
+                                            measuredData.append(transformed_p[2])
 
-                            # If showing lines, draw them
-                            if self.showLines:
-                                transformed_p = self.sim.multiplyVector(sensorMatrix, v)
-                                t[3], t[4], t[5] = transformed_p[0], transformed_p[1], transformed_p[2]
-                                self.sim.addDrawingObjectItem(self.lines, t)
+                                # If showing lines, draw them
+                                if self.showLines:
+                                    transformed_p = self.sim.multiplyVector(sensorMatrix, v)
+                                    t[3], t[4], t[5] = transformed_p[0], transformed_p[1], transformed_p[2]
+                                    self.sim.addDrawingObjectItem(self.lines, t)
             else:
+                print('###################################')
                 pass
 
         return measuredData
     
     def run_coppelia(self):
-        self.sim.setStepping(True)
+        # self.sim.setStepping(True)
         self.sim.startSimulation()
         while self.run_flag:
             self.init_coppelia
