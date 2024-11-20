@@ -56,6 +56,7 @@ class Grid():
 
     def mapping(self, loc, scan):
         x, y, theta = loc       # youBot_ref (x,y,yaw)
+        theta += np.pi/2
         # scan position
         # 라이다 위치는 ref position (로봇 중앙) 으로부터 앞으로 0.275 m 으로 조정.
         rx = x + 0.275 * np.cos(theta)      # ref dummy 위치 몸체 중앙으로 변동되었으므로 0.275 m 값 수정 필요.
@@ -141,6 +142,7 @@ class Grid():
     # visualizeing 부분은 matplotlib 만 다루므로 수정 하지 않아도 됨.
     def visualize(self, loc, scan):
         x, y, theta = loc
+        theta += np.pi/2
         # clear object
         for object in self.plt_objects:
             if object:
@@ -182,13 +184,18 @@ class youBotPP:
     def init_coppelia_pp(self):
         self.robotHandle = self.sim.getObject('/youBot')
         self.refHandle = self.sim.getObject('/youBot_ref')
-        self.frontRefHandle = self.sim.getObject('/youBot_frontRef')
+        # self.frontRefHandle = self.sim.getObject('/youBot_frontRef')
         self.collVolumeHandle = self.sim.getObject('/youBot_coll')
         #self.goalDummyHandle = self.sim.getObject('/goalDummy')
         #self.goalDummyHandle = self.sim.getObject('/balconyDummy')
-        self.waypoints = [self.sim.getObject('/room1Dummy'),
-                          self.sim.getObject('/room2Dummy'),
-                          self.sim.getObject('/entranceDummy'),
+        self.waypoints = [self.sim.getObject('/bedroom1'),
+                          self.sim.getObject('/bedroom2'),
+                          self.sim.getObject('/toilet'),
+                          self.sim.getObject('/entrance'),
+                          self.sim.getObject('/dining'),
+                          self.sim.getObject('/livingroom'),
+                          self.sim.getObject('/balcony_init'),
+                          self.sim.getObject('/balcony_end'),
                         ]
 
         self.wheel_joints = [
@@ -202,11 +209,11 @@ class youBotPP:
         self.prev_side_vel = 0
         self.prev_rot_vel = 0
 
-        self.p_parm = 20
+        self.p_parm = 50 #20
         self.max_v = 10
-        self.p_parm_rot = 10
+        self.p_parm_rot = 10 #10
         self.max_v_rot = 3
-        self.accel_f = 0.35    
+        self.accel_f = 0.35
 
         '''
         sim.createCollection()
@@ -329,7 +336,7 @@ class youBotPP:
                 self.prev_rot_vel = rot_vel
 
                 if np.linalg.norm(np.array(self.sim.getObjectPosition(goalDummyHandle, -1)) -
-                                  np.array(self.sim.getObjectPosition(self.refHandle, -1))) < 0.5:
+                                  np.array(self.sim.getObjectPosition(self.refHandle, -1))) < 0.6:
                     
                     self.sim.removeDrawingObject(track_pos_container)
                     break

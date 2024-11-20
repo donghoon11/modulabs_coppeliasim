@@ -21,7 +21,7 @@ class LocalizationBot(YouBot):
         
         return x, y, theta
     
-    def run_step(self, count):
+    def run_step(self):
         self.control_car()
         scan = self.read_lidars()
         loc = self.read_ref()
@@ -373,6 +373,7 @@ class AMCL:
 
     def visualize(self, loc, scan):
         x, y, theta = loc
+        theta += np.pi/2
         # clear object
         for object in self.plt_objects:
             if object:

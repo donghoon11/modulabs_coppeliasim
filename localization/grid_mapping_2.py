@@ -131,7 +131,7 @@ class Mapping(YouBot):
         theta = self.sim.getObjectOrientation(self.youBot_ref)[2]
         return x, y, theta
 
-    def run_step(self, count):
+    def run_step(self):
         """각 스텝에서 라이다 데이터와 로봇의 위치를 읽어 그리드를 업데이트"""
         scan = self.read_lidars()  # 라이다 데이터를 읽어옴
         loc = self.read_ref()  # 로봇의 위치 정보 읽어옴
